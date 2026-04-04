@@ -1,0 +1,49 @@
+============================================================
+  JOB ANALYSE REPORT
+============================================================
+  Datum: 2026-04-04
+  URL:   
+============================================================
+
+  POSITION: Data & AI Product Engineer (m/w/d)
+  FIRMA:    qnips
+  STANDORT: Home Office
+  TYP:      Fulltime, Remote
+  GEHALT:   Compensation: N/A
+
+============================================================
+  KONTAKTDATEN
+============================================================
+  Email:    jobs@qnips.io
+
+============================================================
+  MATCH SCORE: 86%
+============================================================
+
+Must-Have: 1/1 erfüllt (100%)
+Nice-to-Have: 7/13 erfüllt (54%)
+EMPFEHLUNG: Sehr gute Passung — sofort bewerben!
+
+============================================================
+  MUST-HAVE ANFORDERUNGEN
+============================================================
+  ✅ [technical] Abgeschlossenes Studium im Bereich (Wirtschafts-)Informatik, Data Science, Machine Learning oder ein vergleichbarer Hintergrund → Skill match: machine learning
+
+============================================================
+  NICE-TO-HAVE
+============================================================
+  ⬜ [experience] Erfahrung in der Entwicklung datenbasierter oder KI-gestützter Anwendungen, idealerweise im SaaS- oder Produktumfeld
+  ✅ [technical] Sehr gutes Verständnis von Datenmodellierung, Analytics und Machine Learning → Skill match: machine learning
+  ⬜ [experience] Erfahrung im Aufbau und Betrieb moderner Datenarchitekturen und Pipelines
+  ✅ [technical] Praxis in Cloud-basierten Datenplattformen und produktionsnahen Data-Workflows → Skill match: workflows
+  ✅ [technical] Sehr gute Kenntnisse in Python und SQL → Skill match: sql
+  ✅ [technical] Erfahrung mit API-Integrationen und grundlegender Backend-Entwicklung → Skill match: api
+  ✅ [soft_skill] Kenntnisse in Feature Engineering, Zeitreihen-Forecasting und Recommender-Systemen von Vorteil → Skill match: engineering
+  ✅ [technical] Idealerweise Erfahrung mit LLM-APIs und modernen AI-Toolchains inkl. MCP → Skill match: api
+  ⬜ [soft_skill] Fähigkeit, technische Lösungen aus Produkt- und Nutzerperspektive zu denken
+  ⬜ [soft_skill] Strukturierte, selbstständige Arbeitsweise sowie hohe Motivation und Flexibilität
+  ✅ [language] Sehr gute Englischkenntnisse und gute Deutschkenntnisse von Vorteil → Sprache: Deutsch
+  ⬜ [technical] Erfahrung mit Microsoft Fabric und AI Foundry
+  ⬜ [soft_skill] Freude daran, neue Ideen schnell zu testen und iterativ weiterzuentwickeln
+
+============================================================

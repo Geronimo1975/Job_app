@@ -1,0 +1,17 @@
+Sehr geehrte Damen und Herren,
+
+mit großem Interesse bewerbe ich mich auf die ausgeschriebene Position als {position} bei {firma}.
+
+{custom_paragraph}
+
+Meine vollständigen Bewerbungsunterlagen finden Sie im Anhang.
+
+Ich freue mich auf Ihre Rückmeldung und stehe gerne für ein Gespräch zur Verfügung.
+
+Mit freundlichen Grüßen,
+{sender_name}
+
+Tel: {phone}
+E-Mail: {sender_email}
+LinkedIn: {linkedin}
+GitHub: {github}

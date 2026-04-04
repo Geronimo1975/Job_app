@@ -1,0 +1,12 @@
+[2026-04-04 17:52:56] DocumentAgent        INFO    ▶ DocumentAgent started
+[2026-04-04 17:52:56] DocumentAgent        INFO      ✅ CV / Lebenslauf
+[2026-04-04 17:52:56] DocumentAgent        INFO      ✅ Zertifikate
+[2026-04-04 17:52:56] DocumentAgent        INFO      ✅ Arbeitszeugnisse
+[2026-04-04 17:52:56] DocumentAgent        INFO      ✅ Anschreiben (generierte)
+[2026-04-04 17:52:56] DocumentAgent        INFO    [DocumentAgent] success — 4/4 OK (0.0s) — Alle Dokumente vorhanden
+[2026-04-04 17:54:02] DocumentAgent        INFO    ▶ DocumentAgent started
+[2026-04-04 17:54:02] DocumentAgent        INFO      ✅ CV / Lebenslauf
+[2026-04-04 17:54:02] DocumentAgent        INFO      ✅ Zertifikate
+[2026-04-04 17:54:02] DocumentAgent        INFO      ✅ Arbeitszeugnisse
+[2026-04-04 17:54:02] DocumentAgent        INFO      ✅ Anschreiben (generierte)
+[2026-04-04 17:54:02] DocumentAgent        INFO    [DocumentAgent] success — 4/4 OK (0.0s) — Alle Dokumente vorhanden

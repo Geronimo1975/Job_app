@@ -1,0 +1,123 @@
+{
+  "url": "",
+  "title": "Data & AI Product Engineer (m/w/d)",
+  "company": "qnips",
+  "location": "Home Office",
+  "job_type": "Fulltime, Remote",
+  "salary": "Compensation: N/A",
+  "contact": {
+    "company": "qnips",
+    "contact_person": "",
+    "email": "jobs@qnips.io",
+    "phone": "",
+    "website": "",
+    "address": "",
+    "apply_url": "",
+    "apply_method": ""
+  },
+  "match_score": 86.15384615384615,
+  "match_summary": "Must-Have: 1/1 erfüllt (100%)\nNice-to-Have: 7/13 erfüllt (54%)\nEMPFEHLUNG: Sehr gute Passung — sofort bewerben!",
+  "requirements_must": [
+    {
+      "text": "Abgeschlossenes Studium im Bereich (Wirtschafts-)Informatik, Data Science, Machine Learning oder ein vergleichbarer Hintergrund",
+      "category": "technical",
+      "is_must_have": true,
+      "matched": true,
+      "match_detail": "Skill match: machine learning"
+    }
+  ],
+  "requirements_nice": [
+    {
+      "text": "Erfahrung in der Entwicklung datenbasierter oder KI-gestützter Anwendungen, idealerweise im SaaS- oder Produktumfeld",
+      "category": "experience",
+      "is_must_have": false,
+      "matched": false,
+      "match_detail": ""
+    },
+    {
+      "text": "Sehr gutes Verständnis von Datenmodellierung, Analytics und Machine Learning",
+      "category": "technical",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Skill match: machine learning"
+    },
+    {
+      "text": "Erfahrung im Aufbau und Betrieb moderner Datenarchitekturen und Pipelines",
+      "category": "experience",
+      "is_must_have": false,
+      "matched": false,
+      "match_detail": ""
+    },
+    {
+      "text": "Praxis in Cloud-basierten Datenplattformen und produktionsnahen Data-Workflows",
+      "category": "technical",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Skill match: workflows"
+    },
+    {
+      "text": "Sehr gute Kenntnisse in Python und SQL",
+      "category": "technical",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Skill match: sql"
+    },
+    {
+      "text": "Erfahrung mit API-Integrationen und grundlegender Backend-Entwicklung",
+      "category": "technical",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Skill match: api"
+    },
+    {
+      "text": "Kenntnisse in Feature Engineering, Zeitreihen-Forecasting und Recommender-Systemen von Vorteil",
+      "category": "soft_skill",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Skill match: engineering"
+    },
+    {
+      "text": "Idealerweise Erfahrung mit LLM-APIs und modernen AI-Toolchains inkl. MCP",
+      "category": "technical",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Skill match: api"
+    },
+    {
+      "text": "Fähigkeit, technische Lösungen aus Produkt- und Nutzerperspektive zu denken",
+      "category": "soft_skill",
+      "is_must_have": false,
+      "matched": false,
+      "match_detail": ""
+    },
+    {
+      "text": "Strukturierte, selbstständige Arbeitsweise sowie hohe Motivation und Flexibilität",
+      "category": "soft_skill",
+      "is_must_have": false,
+      "matched": false,
+      "match_detail": ""
+    },
+    {
+      "text": "Sehr gute Englischkenntnisse und gute Deutschkenntnisse von Vorteil",
+      "category": "language",
+      "is_must_have": false,
+      "matched": true,
+      "match_detail": "Sprache: Deutsch"
+    },
+    {
+      "text": "Erfahrung mit Microsoft Fabric und AI Foundry",
+      "category": "technical",
+      "is_must_have": false,
+      "matched": false,
+      "match_detail": ""
+    },
+    {
+      "text": "Freude daran, neue Ideen schnell zu testen und iterativ weiterzuentwickeln",
+      "category": "soft_skill",
+      "is_must_have": false,
+      "matched": false,
+      "match_detail": ""
+    }
+  ],
+  "analyzed_at": "2026-04-04T08:30:18.763340"
+}

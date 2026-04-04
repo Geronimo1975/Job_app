@@ -1,0 +1,17 @@
+Dear {kontakt_person},
+
+I am writing to express my strong interest in the {position} position at {firma}.
+
+{custom_paragraph}
+
+Please find my CV and cover letter attached for your review.
+
+I look forward to hearing from you and would welcome the opportunity to discuss how my experience aligns with your team's needs.
+
+Best regards,
+{sender_name}
+
+Phone: {phone}
+Email: {sender_email}
+LinkedIn: {linkedin}
+GitHub: {github}

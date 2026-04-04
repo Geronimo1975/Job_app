@@ -1,0 +1,17 @@
+Sehr geehrte{anrede_suffix} {kontakt_person},
+
+mit großem Interesse habe ich Ihre Stellenanzeige als {position} bei {firma} gelesen und möchte mich hiermit auf diese Position bewerben.
+
+{custom_paragraph}
+
+Meine Bewerbungsunterlagen einschließlich Lebenslauf und Anschreiben finden Sie im Anhang.
+
+Ich freue mich auf Ihre Rückmeldung und stehe gerne für ein persönliches Gespräch zur Verfügung.
+
+Mit freundlichen Grüßen,
+{sender_name}
+
+Tel: {phone}
+E-Mail: {sender_email}
+LinkedIn: {linkedin}
+GitHub: {github}

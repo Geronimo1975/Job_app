@@ -1,0 +1,103 @@
+============================================================
+  BREVO EMAIL SETUP — Bewerbung Automation
+============================================================
+
+OVERVIEW
+--------
+Acest ghid acoperă configurarea Brevo pentru trimiterea
+emailurilor de aplicare de pe george.cucuiet@gmx.de.
+Ai 2 opțiuni: Python script (rapid) sau n8n workflow (automatizat).
+
+
+PASUL 1 — Configurare Brevo Account
+------------------------------------
+1. Loghează-te în https://app.brevo.com
+2. Mergi la: Settings (⚙️) → SMTP & API
+3. Tab: SMTP → Click "Generate a new SMTP key"
+4. Copiază key-ul generat (format: xkeysib-...)
+5. IMPORTANT: Salvează key-ul, nu se mai afișează!
+
+
+PASUL 2 — Verificare Sender Email
+----------------------------------
+1. În Brevo: Settings → Senders, Domains & Dedicated IPs
+2. Tab: Senders → "Add a Sender"
+3. Completează:
+   - Name: George Sebastian Cucuiet
+   - Email: george.cucuiet@gmx.de
+4. Click "Save"
+5. Verifică emailul primit pe GMX (click link confirmare)
+6. După verificare, statusul devine ✅ Verified
+
+
+PASUL 3a — Utilizare Python Script
+-----------------------------------
+# Setează variabila de mediu cu SMTP key-ul:
+export BREVO_SMTP_KEY="xkeysib-YOUR-KEY-HERE"
+
+# Test (trimite email de test către tine):
+python3 send_bewerbung_brevo.py --test
+
+# Preview fără trimitere:
+python3 send_bewerbung_brevo.py --job qnips --dry-run
+
+# Trimite emailul qnips:
+python3 send_bewerbung_brevo.py --job qnips
+
+# Trimite toate joburile cu email:
+python3 send_bewerbung_brevo.py --job all
+
+
+PASUL 3b — Utilizare n8n Workflow
+----------------------------------
+1. Deschide n8n → Workflows → Import from File
+2. Selectează: n8n_bewerbung_brevo_workflow.json
+3. Configurează credentialele SMTP în n8n:
+   - Mergi la Settings → Credentials → Add Credential
+   - Tip: SMTP
+   - Nume: "Brevo SMTP"
+   - Host: smtp-relay.brevo.com
+   - Port: 587
+   - User: george.cucuiet@gmx.de
+   - Password: xkeysib-YOUR-KEY-HERE (SMTP key-ul de la Pasul 1)
+   - SSL/TLS: STARTTLS
+4. Actualizează calea PDF în nodul "Job Applications Data"
+5. Execută workflow-ul manual sau adaugă un Schedule Trigger
+
+
+BREVO FREE PLAN LIMITS
+-----------------------
+- 300 emails/zi gratuit
+- Sender verification obligatorie
+- Transactional emails: nelimitat pe plan gratuit
+- Nu necesită card de credit
+
+
+TROUBLESHOOTING
+---------------
+Eroare "Authentication failed":
+  → Verifică BREVO_SMTP_KEY (nu API key, ci SMTP key!)
+  → SMTP key și API key sunt DIFERITE în Brevo
+
+Eroare "Sender not authorized":
+  → Verifică sender email în Brevo → Settings → Senders
+  → george.cucuiet@gmx.de trebuie să fie Verified ✅
+
+Email ajunge în SPAM:
+  → Adaugă SPF record pentru domeniul gmx.de (nu e posibil)
+  → Alternativă: folosește un domeniu propriu verificat cu DKIM
+  → Pentru aplicări de job, Gmail/GMX direct e mai sigur
+
+Atașament prea mare:
+  → Brevo limită: 20MB per email
+  → Bewerbung_Komplett_qnips = ~2MB, OK
+
+
+FIȘIERE INCLUSE
+----------------
+send_bewerbung_brevo.py          — Script Python pentru trimitere
+n8n_bewerbung_brevo_workflow.json — Workflow n8n pentru import
+Email_qnips_Bewerbung.txt        — Email content pentru qnips
+Bewerbung_Komplett_qnips.pdf     — PDF complet cu toate documentele
+
+============================================================
