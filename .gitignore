@@ -19,10 +19,15 @@ data/
 output/
 
 # Documents (personal)
-documents/cv/
-documents/certificates/
-documents/references/
+documents/cv/*
+!documents/cv/.gitkeep
+documents/certificates/*
+!documents/certificates/.gitkeep
+documents/references/*
+!documents/references/.gitkeep
 documents/cover_letters/generated/
+documents/cover_letters/templates/*
+!documents/cover_letters/templates/.gitkeep
 
 # Config with credentials
 config/n8n_bewerbung_brevo_workflow.json
