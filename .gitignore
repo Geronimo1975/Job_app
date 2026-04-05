@@ -14,12 +14,9 @@ Thumbs.db
 .env
 *.key
 
-# Data (user-specific)
-data/Job_Application_Tracker.xlsx
-data/backups/
-output/logs/
-output/reports/
-output/sent_emails/
+# Data & Output (user-specific, regenerabile)
+data/
+output/
 
 # Documents (personal)
 documents/cv/
