@@ -1,0 +1,135 @@
+# ============================================================
+# Job_app — Configurare generală
+# ============================================================
+
+# ── Profil Aplicant ─────────────────────────────────────────
+applicant:
+  name: "George Sebastian Cucuiet"
+  email: "george.cucuiet@gmx.de"
+  phone: "+49 160 415 5546"
+  linkedin: "linkedin.com/in/george-sebastian-c-212b7455"
+  github: "github.com/Geronimo1975"
+  location: "Deutschland"
+  languages:
+    - "Deutsch (B2-C1)"
+    - "Englisch (C1)"
+    - "Rumänisch (Muttersprache)"
+
+# ── Skills & Keywords ───────────────────────────────────────
+skills:
+  primary:
+    - "Python"
+    - "Django"
+    - "AI/ML"
+    - "LLM APIs (OpenAI, Claude, Gemini)"
+    - "Workflow Automation (n8n, Make.com)"
+    - "Data Engineering"
+  secondary:
+    - "JavaScript"
+    - "React"
+    - "Docker"
+    - "PostgreSQL"
+    - "REST APIs"
+    - "Git"
+  gaming_specific:
+    - "Game Design"
+    - "Unity"
+    - "Unreal Engine"
+    - "Technical Artist"
+    - "Game Producer"
+    - "QA Automation"
+    - "LiveOps"
+    - "Analytics"
+
+# ── Scraping ────────────────────────────────────────────────
+scraping:
+  # Intervall între scraping runs (minute)
+  interval_minutes: 360
+  # Max joburi per scraping run
+  max_results_per_source: 50
+  # Keywords de căutare
+  search_keywords:
+    - "Python Developer"
+    - "AI Engineer"
+    - "Data Engineer"
+    - "Game Developer"
+    - "Automation Engineer"
+    - "Django Developer"
+    - "LLM Engineer"
+  # Locații
+  locations:
+    - "Germany"
+    - "Remote"
+    - "Berlin"
+    - "München"
+    - "Hamburg"
+    - "Köln"
+    - "Frankfurt"
+  # Surse active
+  sources:
+    jobspy: true
+    career_pages: true
+    linkedin: false  # necesită autentificare
+  # Filtre
+  filters:
+    min_salary: 0
+    experience_max_years: 10
+    exclude_keywords:
+      - "Senior Staff"
+      - "Principal"
+      - "Director"
+      - "VP"
+
+# ── AI / LLM ───────────────────────────────────────────────
+ai:
+  # Provider: "anthropic" sau "openai"
+  provider: "anthropic"
+  model: "claude-sonnet-4-20250514"
+  # Temperatura pentru generare cover letter
+  temperature: 0.7
+  # Limba preferată pentru Anschreiben
+  default_language: "de"
+  # Max tokens per generare
+  max_tokens: 2000
+
+# ── Email / SMTP ────────────────────────────────────────────
+email:
+  # Provider activ: "gmx" sau "brevo"
+  active_provider: "gmx"
+  providers:
+    gmx:
+      server: "mail.gmx.net"
+      port: 587
+      login: "george.cucuiet@gmx.de"
+      env_password_key: "GMX_PASSWORD"
+    brevo:
+      server: "smtp-relay.brevo.com"
+      port: 587
+      login: "george.cucuiet@gmx.de"
+      env_password_key: "BREVO_SMTP_KEY"
+  # Rate limiting
+  max_emails_per_day: 10
+  delay_between_emails_sec: 30
+  # Dry run implicit (safety)
+  dry_run_default: true
+
+# ── Tracker ─────────────────────────────────────────────────
+tracker:
+  file: "data/Job_Application_Tracker.xlsx"
+  auto_backup: true
+  backup_dir: "data/backups"
+
+# ── Documente ───────────────────────────────────────────────
+documents:
+  cv_file: "documents/cv/Resume George Sebastian Cucuiet.pdf"
+  certificates_dir: "documents/certificates"
+  references_dir: "documents/references"
+  cover_letters_dir: "documents/cover_letters/generated"
+  templates_dir: "documents/cover_letters/templates"
+
+# ── Output / Logging ───────────────────────────────────────
+output:
+  logs_dir: "output/logs"
+  reports_dir: "output/reports"
+  sent_dir: "output/sent_emails"
+  log_level: "INFO"

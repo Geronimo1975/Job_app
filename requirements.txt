@@ -1,0 +1,20 @@
+# Job_app — Dependencies
+# ============================================================
+
+# Core
+pyyaml>=6.0
+openpyxl>=3.1.0
+
+# Scraping
+python-jobspy>=1.1.0
+httpx>=0.25.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# AI / LLM
+anthropic>=0.40.0
+
+# Optional (uncomment if needed)
+# openai>=1.0.0
+# fpdf2>=2.7.0
+# playwright>=1.40.0

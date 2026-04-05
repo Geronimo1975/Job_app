@@ -1,0 +1,150 @@
+# ============================================================
+# Game Studios — Target List pentru Bewerbung
+# ============================================================
+# Fiecare studio conține: URL career page, email HR, locație,
+# keywords relevante, limba preferată (de/en)
+
+studios:
+  # ── Germania ──────────────────────────────────────────────
+  - name: "InnoGames"
+    location: "Hamburg, Germany"
+    career_url: "https://www.innogames.com/career/"
+    email_hr: "jobs@innogames.com"
+    language: "en"
+    keywords: ["Python", "Backend", "Data", "Analytics"]
+    notes: "Forge of Empires, Elvenar — mare studio Hamburg"
+
+  - name: "Goodgame Studios"
+    location: "Hamburg, Germany"
+    career_url: "https://goodgamestudios.com/careers/"
+    email_hr: "jobs@goodgamestudios.com"
+    language: "en"
+    keywords: ["Python", "Data Engineer", "Backend"]
+    notes: "Empire, Big Farm"
+
+  - name: "Wooga"
+    location: "Berlin, Germany"
+    career_url: "https://www.wooga.com/jobs"
+    email_hr: "jobs@wooga.com"
+    language: "en"
+    keywords: ["Data", "Analytics", "Backend", "Python"]
+    notes: "Pearl's Peril, Jelly Splash — Playtika subsidiary"
+
+  - name: "King (Activision Blizzard)"
+    location: "Berlin, Germany"
+    career_url: "https://careers.king.com/"
+    email_hr: null
+    language: "en"
+    keywords: ["Data", "AI", "ML", "Analytics", "Python"]
+    notes: "Candy Crush — aplicare doar prin portal"
+
+  - name: "Kolibri Games"
+    location: "Berlin, Germany"
+    career_url: "https://kolibrigames.com/careers/"
+    email_hr: "careers@kolibrigames.com"
+    language: "en"
+    keywords: ["Backend", "Data", "Python", "Analytics"]
+    notes: "Idle Miner Tycoon — Ubisoft subsidiary"
+
+  - name: "Gameforge"
+    location: "Karlsruhe, Germany"
+    career_url: "https://corporate.gameforge.com/en/career"
+    email_hr: "jobs@gameforge.de"
+    language: "de"
+    keywords: ["Python", "DevOps", "Backend", "Data"]
+    notes: "AION, Metin2, OGame"
+
+  - name: "Crytek"
+    location: "Frankfurt, Germany"
+    career_url: "https://www.crytek.com/career/offers"
+    email_hr: null
+    language: "en"
+    keywords: ["AI", "Backend", "DevOps", "Tools"]
+    notes: "Crysis, Hunt: Showdown — portal only"
+
+  - name: "Yager Development"
+    location: "Berlin, Germany"
+    career_url: "https://yager.de/careers/"
+    email_hr: "jobs@yager.de"
+    language: "en"
+    keywords: ["Backend", "Tools", "DevOps", "Python"]
+    notes: "The Cycle: Frontier"
+
+  - name: "Mimimi Games"
+    location: "München, Germany"
+    career_url: "https://www.mimimi.games/jobs/"
+    email_hr: "jobs@mimimi.games"
+    language: "en"
+    keywords: ["Tools", "QA", "Automation"]
+    notes: "Shadow Tactics, Desperados III"
+
+  - name: "Deck13 Interactive"
+    location: "Frankfurt, Germany"
+    career_url: "https://deck13.com/career/"
+    email_hr: "jobs@deck13.de"
+    language: "de"
+    keywords: ["Backend", "Tools", "QA"]
+    notes: "The Surge, Atlas Fallen"
+
+  # ── International (Remote-friendly) ───────────────────────
+  - name: "Riot Games"
+    location: "Dublin, Ireland / Remote EU"
+    career_url: "https://www.riotgames.com/en/work-with-us"
+    email_hr: null
+    language: "en"
+    keywords: ["Data Engineer", "Python", "AI", "ML", "Analytics"]
+    notes: "LoL, Valorant — doar portal, foarte competitiv"
+
+  - name: "Ubisoft"
+    location: "Düsseldorf / Berlin / Mainz, Germany"
+    career_url: "https://www.ubisoft.com/en-us/company/careers"
+    email_hr: null
+    language: "en"
+    keywords: ["Data", "AI", "Backend", "Python", "DevOps"]
+    notes: "Studiouri multiple în DE — aplicare prin portal"
+
+  - name: "EA (Electronic Arts)"
+    location: "Köln, Germany"
+    career_url: "https://ea.com/careers"
+    email_hr: null
+    language: "en"
+    keywords: ["Data Engineer", "AI", "Python", "Analytics"]
+    notes: "FIFA, Battlefield — birou Köln"
+
+  - name: "CD Projekt Red"
+    location: "Wroclaw, Poland / Remote EU"
+    career_url: "https://www.cdprojektred.com/en/jobs"
+    email_hr: null
+    language: "en"
+    keywords: ["AI", "Data", "Backend", "Python", "Tools"]
+    notes: "Cyberpunk, Witcher — partial remote EU"
+
+  - name: "Supercell"
+    location: "Helsinki, Finland"
+    career_url: "https://supercell.com/en/careers/"
+    email_hr: null
+    language: "en"
+    keywords: ["Data", "AI", "Backend", "Python"]
+    notes: "Clash of Clans, Brawl Stars — foarte selectiv"
+
+# ── Job Boards specifice Gaming ─────────────────────────────
+job_boards:
+  - name: "Games Job Direct"
+    url: "https://gamesjobsdirect.com"
+    scrape_method: "web"
+
+  - name: "Hitmarker"
+    url: "https://hitmarker.net/jobs"
+    scrape_method: "web"
+
+  - name: "Work With Indies"
+    url: "https://www.workwithindies.com"
+    scrape_method: "web"
+
+  - name: "GamesIndustry.biz Jobs"
+    url: "https://jobs.gamesindustry.biz"
+    scrape_method: "web"
+
+  - name: "RemoteGameJobs"
+    url: "https://remotegamejobs.com"
+    scrape_method: "web"

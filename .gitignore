@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.key
+
+# Data (user-specific)
+data/Job_Application_Tracker.xlsx
+data/backups/
+output/logs/
+output/reports/
+output/sent_emails/
+
+# Documents (personal)
+documents/cv/
+documents/certificates/
+documents/references/
+documents/cover_letters/generated/
+
+# Config with credentials
+config/n8n_bewerbung_brevo_workflow.json
