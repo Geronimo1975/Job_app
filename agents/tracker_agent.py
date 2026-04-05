@@ -107,11 +107,13 @@ class TrackerAgent(BaseAgent):
             result.items_processed += 1
             try:
                 row = self.tracker.add_job(job)
+                job["_row"] = row
                 result.items_succeeded += 1
                 self.logger.info(f"  ➕ Row {row}: {job.get('company', '?')}")
             except Exception as e:
                 result.errors.append(str(e))
 
+        result.data = {"jobs": jobs}
         result.status = AgentStatus.SUCCESS
         result.message = f"{result.items_succeeded}/{result.items_processed} joburi adăugate"
         return result

@@ -102,6 +102,10 @@ def run_pipeline(args):
             print_result(t_result)
             results.append(t_result)
 
+            # Actualizează pipeline_jobs cu _row setat de TrackerAgent
+            if t_result.status != AgentStatus.FAILED:
+                pipeline_jobs = t_result.data.get("jobs", pipeline_jobs)
+
     # STEP 2: Analiză
     if args.step in ("analyze", "full"):
         print("\n🔍 STEP 2: Analiză & Match Score...")

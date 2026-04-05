@@ -95,3 +95,36 @@ class TestTrackerAgent:
             jobs=[sample_job_analyzed],
         )
         assert result.status in (AgentStatus.SUCCESS, AgentStatus.PARTIAL)
+
+    def test_add_jobs_sets_row(self, tracker_agent, sample_jobs):
+        """Testează că _add_jobs setează _row pe fiecare job dict."""
+        result = tracker_agent.run(action="add_jobs", jobs=sample_jobs)
+
+        assert result.status == AgentStatus.SUCCESS
+        # Verifică _row setat direct pe job dicts
+        for job in sample_jobs:
+            assert "_row" in job, f"_row lipsește pentru {job.get('company')}"
+            assert isinstance(job["_row"], int)
+            assert job["_row"] >= 2  # rândul 1 e header
+
+        # Verifică propagarea prin result.data
+        returned_jobs = result.data.get("jobs", [])
+        assert len(returned_jobs) == len(sample_jobs)
+        for job in returned_jobs:
+            assert "_row" in job
+
+    def test_row_propagation_add_then_update(self, tracker_agent, sample_jobs):
+        """Testează propagarea _row: add_jobs → update_status."""
+        # Adăugăm joburi — _row trebuie setat
+        add_result = tracker_agent.run(action="add_jobs", jobs=sample_jobs)
+        assert add_result.status == AgentStatus.SUCCESS
+
+        # Adăugăm date de analiză pe joburi
+        for job in sample_jobs:
+            job["analysis"] = {"match_score": 80, "matching_skills": ["Python"]}
+            job["pipeline_status"] = "Analysiert"
+
+        # Update cu aceleași joburi — _row trebuie să funcționeze
+        update_result = tracker_agent.run(action="update_status", jobs=sample_jobs)
+        assert update_result.status == AgentStatus.SUCCESS
+        assert update_result.items_succeeded == len(sample_jobs)
