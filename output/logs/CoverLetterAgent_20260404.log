@@ -1,8 +1,0 @@
-[2026-04-04 17:52:56] CoverLetterAgent     INFO    ▶ CoverLetterAgent started
-[2026-04-04 17:52:56] CoverLetterAgent     INFO      ✍ Generiere Anschreiben: Gerhard D. Wempe GmbH & Co. KG — Lead Integration Architect (m/w/d) (de)
-[2026-04-04 17:52:56] CoverLetterAgent     ERROR     ❌ Eroare la Gerhard D. Wempe GmbH & Co. KG: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
-[2026-04-04 17:52:56] CoverLetterAgent     INFO    [CoverLetterAgent] failed — 0/1 OK (0.0s) — Generare eșuată pentru toate joburile
-[2026-04-04 17:54:02] CoverLetterAgent     INFO    ▶ CoverLetterAgent started
-[2026-04-04 17:54:02] CoverLetterAgent     INFO      ✍ Generiere Anschreiben: Gerhard D. Wempe GmbH & Co. KG — Lead Integration Architect (m/w/d) (de)
-[2026-04-04 17:54:02] CoverLetterAgent     INFO      ✅ Salvat: Anschreiben_Gerhard D_ Wempe GmbH _ Co_ KG_Lead Integration Architect _m_w_d__20260404.txt
-[2026-04-04 17:54:02] CoverLetterAgent     INFO    [CoverLetterAgent] success — 1/1 OK (0.0s) — 1 Anschreiben generate
