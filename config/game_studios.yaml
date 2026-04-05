@@ -86,6 +86,78 @@ studios:
     keywords: ["Backend", "Tools", "QA"]
     notes: "The Surge, Atlas Fallen"
 
+  - name: "Bigpoint"
+    location: "Hamburg, Germany"
+    career_url: "https://www.bigpoint.net/careers/"
+    email_hr: null
+    language: "en"
+    keywords: ["Backend", "Data", "Python", "Analytics", "DevOps"]
+    notes: "Drakensang Online — aplicare prin Personio portal"
+    source: "JOB-4 cercetare piata"
+
+  - name: "Daedalic Entertainment"
+    location: "Hamburg, Germany"
+    career_url: "https://daedalic.jobs.personio.de"
+    email_hr: null
+    language: "en"
+    keywords: ["Tools", "QA", "Backend"]
+    notes: "Deponia, Shadow Gambit — Personio portal"
+    source: "JOB-4 cercetare piata"
+
+  - name: "HandyGames"
+    location: "Giebelstadt, Germany"
+    career_url: "https://www.handy-games.com/en/jobs/"
+    email_hr: null
+    language: "en"
+    keywords: ["Data", "Analytics", "Backend", "Python"]
+    notes: "THQ Nordic subsidiary — mobile analytics focus"
+    source: "JOB-4 cercetare piata"
+
+  - name: "Keen Games"
+    location: "Frankfurt, Germany"
+    career_url: "https://keengames.com/jobs/"
+    email_hr: null
+    language: "en"
+    keywords: ["Backend", "Tools", "Python"]
+    notes: "Enshrouded — open applications accepted"
+    source: "JOB-4 cercetare piata"
+
+  - name: "Travian Games"
+    location: "München, Germany"
+    career_url: "https://www.traviangames.com/en/career"
+    email_hr: null
+    language: "en"
+    keywords: ["Backend", "Python", "Data", "Full Stack"]
+    notes: "Travian, Legends — hybrid work, München HQ"
+    source: "JOB-4 cercetare piata"
+
+  - name: "GameDuell"
+    location: "Berlin, Germany"
+    career_url: "https://inside.gameduell.com/#jobs"
+    email_hr: null
+    language: "en"
+    keywords: ["Data", "Backend", "Python", "Analytics"]
+    notes: "Casual/skill games — Berlin HQ"
+    source: "JOB-4 cercetare piata"
+
+  - name: "Deep Silver Fishlabs"
+    location: "Hamburg, Germany"
+    career_url: "https://fishlabs.de/"
+    email_hr: null
+    language: "en"
+    keywords: ["Backend", "Tools", "DevOps"]
+    notes: "Chorus — subsidiary Koch Media/Plaion, joburi posibil via parent"
+    source: "JOB-4 cercetare piata"
+
+  - name: "XYRALITY"
+    location: "Hamburg, Germany"
+    career_url: "https://xyrality.com/#career"
+    email_hr: "jobs@xyrality.com"
+    language: "de"
+    keywords: ["Backend", "Data", "Python", "Game Design"]
+    notes: "Mobile strategy games — open applications via email"
+    source: "JOB-4 cercetare piata"
+
   # ── International (Remote-friendly) ───────────────────────
   - name: "Riot Games"
     location: "Dublin, Ireland / Remote EU"
