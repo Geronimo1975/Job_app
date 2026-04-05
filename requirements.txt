@@ -14,6 +14,10 @@ lxml>=5.0.0
 # AI / LLM
 anthropic>=0.40.0
 
+# Testing
+pytest>=8.0.0
+pytest-mock>=3.12.0
+
 # Optional (uncomment if needed)
 # openai>=1.0.0
 # fpdf2>=2.7.0
