@@ -28,6 +28,7 @@ Utilizare:
 """
 
 import argparse
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -70,10 +71,84 @@ def print_result(result: AgentResult):
     print()
 
 
+def validate_environment(config: dict, provider: str | None = None) -> bool:
+    """Validează runtime environment înainte de pornirea pipeline-ului.
+
+    Verifică env vars, directoare și fișierul CV.
+    Returnează True dacă toate verificările critice trec.
+    """
+    checks = []
+    has_critical_failure = False
+
+    # ── Env vars ────────────────────────────────────────────
+    # ANTHROPIC_API_KEY — necesar pentru AI
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        checks.append(("ANTHROPIC_API_KEY", True, "setat"))
+    else:
+        checks.append(("ANTHROPIC_API_KEY", False, "lipsă — AI nu va funcționa"))
+        has_critical_failure = True
+
+    # SMTP password — per provider activ
+    active_provider = provider or config.get("email", {}).get("active_provider", "gmx")
+    provider_cfg = config.get("email", {}).get("providers", {}).get(active_provider, {})
+    env_key = provider_cfg.get("env_password_key", "")
+    if env_key:
+        if os.environ.get(env_key, ""):
+            checks.append((env_key, True, f"setat (provider: {active_provider})"))
+        else:
+            checks.append((env_key, False, f"lipsă — email nu va funcționa (provider: {active_provider})"))
+            has_critical_failure = True
+
+    # ── Directoare ──────────────────────────────────────────
+    project_root = Path(__file__).parent.resolve()
+    required_dirs = [
+        ("data/", config.get("tracker", {}).get("file", "data/").rsplit("/", 1)[0]),
+        ("output/logs", config.get("output", {}).get("logs_dir", "output/logs")),
+        ("documents/", config.get("documents", {}).get("cv_file", "documents/").rsplit("/", 1)[0]),
+    ]
+    for label, rel_path in required_dirs:
+        dir_path = project_root / rel_path
+        if dir_path.is_dir():
+            checks.append((f"Dir {label}", True, str(dir_path)))
+        else:
+            checks.append((f"Dir {label}", False, f"lipsă: {dir_path}"))
+
+    # ── CV fișier ───────────────────────────────────────────
+    cv_rel = config.get("documents", {}).get("cv_file", "")
+    if cv_rel:
+        cv_path = project_root / cv_rel
+        if cv_path.is_file():
+            checks.append(("CV fișier", True, cv_path.name))
+        else:
+            checks.append(("CV fișier", False, f"lipsă: {cv_path}"))
+
+    # ── Raport ──────────────────────────────────────────────
+    print(f"\n{'─' * 54}")
+    print("  🔍 ENVIRONMENT CHECK")
+    print(f"{'─' * 54}")
+    for name, ok, detail in checks:
+        icon = "✅" if ok else "❌"
+        print(f"  {icon} {name}: {detail}")
+    print(f"{'─' * 54}")
+
+    if has_critical_failure:
+        print("  ❌ Verificare eșuată — lipsesc variabile critice de mediu.")
+        print("     Setează variabilele lipsă în .env și reîncearcă.\n")
+        return False
+
+    print("  ✅ Environment OK\n")
+    return True
+
+
 def run_pipeline(args):
     logger = setup_logger("Pipeline")
     config = load_config()
     dry_run = not args.live
+
+    if not validate_environment(config, provider=args.provider):
+        logger.error("Environment validation failed — pipeline oprit.")
+        sys.exit(1)
 
     print_banner()
     print(f"  Mode:      {'🔴 LIVE' if args.live else '🟡 DRY RUN'}")
