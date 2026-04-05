@@ -1,0 +1,8 @@
+[2026-04-04 17:52:56] EmailAgent           INFO    ▶ EmailAgent started
+[2026-04-04 17:52:56] EmailAgent           INFO      📧 Gerhard D. Wempe GmbH & Co. KG — Lead Integration Architect (m/w/d) → cucuiet.george@gmail.com
+[2026-04-04 17:52:56] EmailAgent           ERROR     ❌ Gerhard D. Wempe GmbH & Co. KG: 
+[2026-04-04 17:52:56] EmailAgent           INFO    [EmailAgent] failed — 0/1 OK (0.0s) — Niciun email trimis
+[2026-04-04 17:54:02] EmailAgent           INFO    ▶ EmailAgent started
+[2026-04-04 17:54:02] EmailAgent           INFO      📧 Gerhard D. Wempe GmbH & Co. KG — Lead Integration Architect (m/w/d) → cucuiet.george@gmail.com
+[2026-04-04 17:54:02] EmailAgent           ERROR     ❌ Gerhard D. Wempe GmbH & Co. KG: 
+[2026-04-04 17:54:02] EmailAgent           INFO    [EmailAgent] failed — 0/1 OK (0.0s) — Niciun email trimis

@@ -1,0 +1,36 @@
+============================================================
+  EMAIL BEWERBUNG — qnips
+============================================================
+
+AN:      jobs@qnips.io
+VON:     george.cucuiet@gmx.de
+BETREFF: Bewerbung als Data & AI Product Engineer (m/w/d) — George Sebastian Cucuiet
+
+ATTACHMENT: Bewerbung_Komplett_qnips_George_Cucuiet.pdf (7 Seiten)
+  - Anschreiben
+  - Lebenslauf (2 Seiten)
+  - Arbeitszeugnis UMCH (2 Seiten)
+  - Project Management Certificate
+  - Marketing & Communications Certificate
+
+============================================================
+  EMAIL TEXT
+============================================================
+
+Sehr geehrte Frau Harrendorf,
+
+mit großem Interesse bewerbe ich mich auf die ausgeschriebene Position als Data & AI Product Engineer (m/w/d) bei qnips.
+
+Als Python- und AI-Automation-Entwickler mit Erfahrung im Aufbau datengetriebener SaaS-Features bringe ich genau die Kombination aus technischem Produktdenken und KI-Expertise mit, die Sie suchen. In meinen aktuellen Projekten arbeite ich täglich mit LLM-APIs (OpenAI, Claude, Gemini), baue API-Integrationen und automatisierte Datenpipelines mit Python, Django und n8n.
+
+Meine Bewerbungsunterlagen (Anschreiben, Lebenslauf, Zeugnisse und Zertifikate) finden Sie im beigefügten PDF.
+
+Ich freue mich auf Ihre Rückmeldung und stehe gerne für ein persönliches Gespräch zur Verfügung.
+
+Mit freundlichen Grüßen,
+George Sebastian Cucuiet
+
+Tel: +49 160 415 5546
+E-Mail: george.cucuiet@gmx.de
+LinkedIn: linkedin.com/in/george-sebastian-c-212b7455
+GitHub: github.com/Geronimo1975

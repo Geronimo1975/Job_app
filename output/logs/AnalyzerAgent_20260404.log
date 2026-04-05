@@ -1,0 +1,7 @@
+[2026-04-04 17:52:56] AnalyzerAgent        INFO    ▶ AnalyzerAgent started
+[2026-04-04 17:52:56] AnalyzerAgent        ERROR     ❌ Error analyzing Gerhard D. Wempe GmbH & Co. KG: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[2026-04-04 17:52:56] AnalyzerAgent        INFO    [AnalyzerAgent] success — 0/1 OK (0.0s) — 0/1 joburi cu score >= 0
+[2026-04-04 17:54:02] AnalyzerAgent        INFO    ▶ AnalyzerAgent started
+[2026-04-04 17:54:02] AnalyzerAgent        WARNING   ⚠ AI fallback → keywords: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[2026-04-04 17:54:02] AnalyzerAgent        INFO      ✅ Gerhard D. Wempe GmbH & Co. KG — Lead Integration Architect (m/w/d) — Score: 1
+[2026-04-04 17:54:02] AnalyzerAgent        INFO    [AnalyzerAgent] success — 1/1 OK (0.0s) — 1/1 joburi cu score >= 0

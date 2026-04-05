@@ -1,0 +1,101 @@
+{
+  "name": "Bewerbung Email Sender — Brevo",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "filePath": "={{$json.bewerbung_pdf_path}}",
+        "options": {}
+      },
+      "id": "read-pdf-1",
+      "name": "Read Bewerbung PDF",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "george.cucuiet@gmx.de",
+        "toEmail": "={{$json.to_email}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.email_body}}",
+        "options": {
+          "fromName": "George Sebastian Cucuiet",
+          "replyTo": "george.cucuiet@gmx.de",
+          "attachments": "data"
+        }
+      },
+      "id": "brevo-send-1",
+      "name": "Send via Brevo SMTP",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "BREVO_SMTP_CREDENTIAL_ID",
+          "name": "Brevo SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Job Application Data — editează aici pentru fiecare aplicare\nconst jobs = [\n  {\n    job_key: 'qnips',\n    to_email: 'jobs@qnips.io',\n    to_name: 'Frau Harrendorf',\n    subject: 'Bewerbung als Data & AI Product Engineer (m/w/d) — George Sebastian Cucuiet',\n    email_body: `Sehr geehrte Frau Harrendorf,\\n\\nmit großem Interesse bewerbe ich mich auf die ausgeschriebene Position als Data & AI Product Engineer (m/w/d) bei qnips.\\n\\nAls Python- und AI-Automation-Entwickler mit Erfahrung im Aufbau datengetriebener SaaS-Features bringe ich genau die Kombination aus technischem Produktdenken und KI-Expertise mit, die Sie suchen. In meinen aktuellen Projekten arbeite ich täglich mit LLM-APIs (OpenAI, Claude, Gemini), baue API-Integrationen und automatisierte Datenpipelines mit Python, Django und n8n.\\n\\nMeine Bewerbungsunterlagen (Anschreiben, Lebenslauf, Zeugnisse und Zertifikate) finden Sie im beigefügten PDF.\\n\\nIch freue mich auf Ihre Rückmeldung und stehe gerne für ein persönliches Gespräch zur Verfügung.\\n\\nMit freundlichen Grüßen,\\nGeorge Sebastian Cucuiet\\n\\nTel: +49 160 415 5546\\nE-Mail: george.cucuiet@gmx.de\\nLinkedIn: linkedin.com/in/george-sebastian-c-212b7455\\nGitHub: github.com/Geronimo1975`,\n    bewerbung_pdf_path: '/path/to/Bewerbung_Komplett_qnips_George_Cucuiet.pdf'\n  }\n  // Adaugă alte joburi aici\n];\n\nreturn jobs.map(job => ({ json: job }));"
+      },
+      "id": "function-1",
+      "name": "Job Applications Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Job Applications Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Applications Data": {
+      "main": [
+        [
+          {
+            "node": "Read Bewerbung PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Bewerbung PDF": {
+      "main": [
+        [
+          {
+            "node": "Send via Brevo SMTP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Bewerbung"
+    }
+  ]
+}
