@@ -47,7 +47,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { \"ok\": true, \"upserted\": $items().length } }}"
+        "responseBody": "={{ { \"ok\": true, \"upserted\": $input.all().length } }}"
       },
       "id": "respond-ingest",
       "name": "Respond",

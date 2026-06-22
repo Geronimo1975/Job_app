@@ -12,7 +12,7 @@ python3 scripts/deploy_n8n_workflows.py
 
 ## Pre-condiții în n8n
 - Variabila de mediu `JOBAPP_SECRET` setată pe instanța n8n = valoarea din `.env::N8N_WEBHOOK_SECRET`.
-- Credențialul Google Sheets `lwLv81Aaab8h0Zm3` valid; Sheet-ul `1p0u4...` are tab-ul `Job Applications` cu headerele germane pe rândul 1.
+- Credențialul Google Sheets `lwLv81Aaab8h0Zm3` valid; Sheet-ul `1p0u4XcMxOWex2-OTfIxnvpun3NVFkrqh3DvLWhRBkO0` are tab-ul `Job Applications` cu headerele germane pe rândul 1.
 
 ## Fallback (dacă activarea prin API eșuează)
 Importă manual cele 2 fișiere JSON din UI (Import from File) și activează-le.

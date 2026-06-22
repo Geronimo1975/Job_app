@@ -9,7 +9,6 @@ Rulare:
     python3 scripts/deploy_n8n_workflows.py
 """
 import json
-import os
 from pathlib import Path
 
 import httpx
@@ -40,10 +39,16 @@ def main():
         if name in by_name:
             wid = by_name[name]
             r = httpx.put(f"{BASE}/workflows/{wid}", headers=h, json=wf, timeout=30)
+            if r.status_code >= 300:
+                raise SystemExit(f"  ❌ update {name} eșuat: HTTP {r.status_code} — {r.text[:200]}")
             print(f"  ♻ update {name}: HTTP {r.status_code}")
         else:
             r = httpx.post(f"{BASE}/workflows", headers=h, json=wf, timeout=30)
+            if r.status_code >= 300:
+                raise SystemExit(f"  ❌ create {name} eșuat: HTTP {r.status_code} — {r.text[:200]}")
             wid = r.json().get("id")
+            if not wid:
+                raise SystemExit(f"  ❌ create {name}: răspuns fără id — {r.text[:200]}")
             print(f"  ➕ create {name}: HTTP {r.status_code} (id={wid})")
         # activează
         ra = httpx.post(f"{BASE}/workflows/{wid}/activate", headers=h, timeout=30)
