@@ -40,8 +40,8 @@ python3 scripts/deploy_n8n_workflows.py   # (Re)deploy workflow-uri n8n
 - Config: bloc `n8n:` în `config/settings.yaml` (`enabled`, `base_url`, `paths`, `poll_interval_min`).
 - Secrete `.env`: `N8N_WEBHOOK_SECRET` (header webhook), `N8N_API_KEY` (doar deploy).
 - Dezactivare integrare: `n8n.enabled: false` → pipeline-ul rulează doar cu Excel local.
-- Polling automat: încarcă `scripts/com.jobapp.poll.plist` cu
-  `launchctl load -w ~/Library/LaunchAgents/com.jobapp.poll.plist`.
+- Polling automat: copiază plist-ul și încarcă-l cu launchctl:
+  `cp scripts/com.jobapp.poll.plist ~/Library/LaunchAgents/ && launchctl load -w ~/Library/LaunchAgents/com.jobapp.poll.plist`
 
 ## Structura proiect
 

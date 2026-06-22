@@ -296,7 +296,6 @@ def run_poll(args) -> list:
       3. Generează Anschreiben lipsă + trimite email (dry-run/live).
       4. Push status înapoi la n8n (Sheet) + Excel rămâne backup via EmailAgent.
     """
-    logger = setup_logger("Poll")
     dry_run = not args.live
     results = []
 
@@ -312,6 +311,11 @@ def run_poll(args) -> list:
         for c in commands
         if str(c.get("Email Status", "")).upper() != "GESENDET"
     ]
+
+    # Propagă limba (Sprache) acolo unde o citesc agenții (analysis.language)
+    for job in jobs:
+        analysis = job.setdefault("analysis", {})
+        analysis.setdefault("language", job.get("language", "de"))
 
     if not jobs:
         print("  ⬜ Nicio comandă SENDEN de procesat.")

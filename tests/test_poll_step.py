@@ -47,3 +47,25 @@ def test_poll_processes_command_and_pushes_back():
     pushed_jobs = second_call.kwargs["jobs"]
     assert pushed_jobs[0]["url"] == "u1"
     EM.return_value.run.assert_called_once()
+
+
+def test_poll_lifts_sprache_into_analysis():
+    import main
+    # Fără Anschreiben → needs_letter non-gol → CoverLetterAgent.run este chemat
+    cmd = {"action": "send", "URL": "u1", "Firma": "X", "Kontakt Email": "hr@x.de",
+           "Sprache": "en"}
+    pend = _ok("N8nSyncAgent", {"commands": [cmd]})
+    push = _ok("N8nSyncAgent", {"upserted": 1})
+    with patch("main.N8nSyncAgent") as N8n, \
+         patch("main.CoverLetterAgent") as CL, \
+         patch("main.EmailAgent") as EM:
+        N8n.return_value.run.side_effect = [pend, push]
+        CL.return_value.run.return_value = _ok("CoverLetterAgent",
+            {"jobs_with_letters": [{"url": "u1", "company": "X", "email_hr": "hr@x.de",
+                                    "language": "en", "analysis": {"language": "en"},
+                                    "cover_letter": "Dear..."}]})
+        EM.return_value.run.return_value = _ok("EmailAgent", {})
+        main.run_poll(_args(live=False))
+    # Verificăm că run_poll a ridicat limba în analysis ÎNAINTE ca CoverLetterAgent să ruleze
+    cl_jobs = CL.return_value.run.call_args.kwargs["jobs"]
+    assert cl_jobs[0]["analysis"]["language"] == "en"
