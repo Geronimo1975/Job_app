@@ -44,6 +44,8 @@ from agents.cover_letter_agent import CoverLetterAgent
 from agents.email_agent import EmailAgent
 from agents.document_agent import DocumentAgent
 from agents.tracker_agent import TrackerAgent
+from agents.n8n_sync_agent import N8nSyncAgent
+from sender.n8n_mapping import sheet_row_to_job
 
 
 def print_banner():
@@ -251,6 +253,14 @@ def run_pipeline(args):
             print_result(t_result)
             results.append(t_result)
 
+    # STEP 6b: Sync rezultate la n8n / Google Sheets (dual-write, non-blocant)
+    if args.step in ("scrape", "analyze", "generate", "send", "full") and pipeline_jobs:
+        print("\n☁ STEP 6b: Sync → n8n / Google Sheets...")
+        n8n = N8nSyncAgent()
+        n8n_result = n8n.run(action="push", jobs=pipeline_jobs)
+        print_result(n8n_result)
+        results.append(n8n_result)
+
     # STEP 7: Raport
     if args.step in ("report", "full"):
         print("\n📊 STEP 7: Raport...")
@@ -277,6 +287,67 @@ def run_pipeline(args):
     return results
 
 
+def run_poll(args) -> list:
+    """Trigger prin polling: cere comenzi SENDEN de la n8n, procesează, push status.
+
+    Pași:
+      1. N8nSyncAgent(pending) → comenzi (chei germane).
+      2. Mapează în joburi interne; sare peste cele deja GESENDET.
+      3. Generează Anschreiben lipsă + trimite email (dry-run/live).
+      4. Push status înapoi la n8n (Sheet) + Excel rămâne backup via EmailAgent.
+    """
+    logger = setup_logger("Poll")
+    dry_run = not args.live
+    results = []
+
+    n8n = N8nSyncAgent()
+    pending = n8n.run(action="pending")
+    print_result(pending)
+    results.append(pending)
+
+    commands = pending.data.get("commands", [])
+    # Filtrează defensiv joburile deja trimise
+    jobs = [
+        sheet_row_to_job(c)
+        for c in commands
+        if str(c.get("Email Status", "")).upper() != "GESENDET"
+    ]
+
+    if not jobs:
+        print("  ⬜ Nicio comandă SENDEN de procesat.")
+        return results
+
+    print(f"  📥 {len(jobs)} comenzi SENDEN de procesat.")
+
+    # Generează Anschreiben pentru joburile fără cover_letter
+    needs_letter = [j for j in jobs if not j.get("cover_letter")]
+    if needs_letter:
+        cl = CoverLetterAgent()
+        cl_res = cl.run(jobs=needs_letter)
+        print_result(cl_res)
+        results.append(cl_res)
+        if cl_res.status != AgentStatus.FAILED:
+            jobs = cl_res.data.get("jobs_with_letters", jobs)
+
+    # Trimite emailuri
+    em = EmailAgent()
+    em_res = em.run(jobs=jobs, dry_run=dry_run, provider=args.provider)
+    print_result(em_res)
+    results.append(em_res)
+
+    # Marchează status și push înapoi la n8n
+    if em_res.status != AgentStatus.FAILED:
+        for job in jobs:
+            job["status"] = "GESENDET" if not dry_run else job.get("status", "Bereit")
+            job["email_status"] = "GESENDET" if not dry_run else "DRY_RUN"
+            job["gesendet_am"] = datetime.now().strftime("%Y-%m-%d") if not dry_run else ""
+        push = n8n.run(action="push", jobs=jobs)
+        print_result(push)
+        results.append(push)
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Job_app — Multi-Agent Bewerbung Pipeline",
@@ -284,7 +355,7 @@ def main():
     )
     parser.add_argument(
         "--step",
-        choices=["scrape", "analyze", "generate", "organize", "verify", "send", "report", "full"],
+        choices=["scrape", "analyze", "generate", "organize", "verify", "send", "report", "full", "poll"],
         default="full",
         help="Step de executat (default: full)",
     )
@@ -299,7 +370,10 @@ def main():
         args.use_ai = False
 
     try:
-        run_pipeline(args)
+        if args.step == "poll":
+            run_poll(args)
+        else:
+            run_pipeline(args)
     except KeyboardInterrupt:
         print("\n\n⏹ Pipeline oprit de utilizator.")
         sys.exit(130)
