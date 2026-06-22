@@ -27,6 +27,22 @@ python3 main.py --provider brevo       # SMTP provider: gmx (default) sau brevo
 python3 main.py --no-ai                # Dezactiveaza AI pt analiza
 ```
 
+### n8n / Google Sheets (integrare)
+
+Trackerul e oglindit într-un Google Sheet prin n8n (sursă de adevăr = Sheet).
+Python nu atinge Google direct; vorbește cu n8n via webhook.
+
+```bash
+python3 main.py --step poll        # Preia comenzile SENDEN din Sheet și trimite
+python3 scripts/deploy_n8n_workflows.py   # (Re)deploy workflow-uri n8n
+```
+
+- Config: bloc `n8n:` în `config/settings.yaml` (`enabled`, `base_url`, `paths`, `poll_interval_min`).
+- Secrete `.env`: `N8N_WEBHOOK_SECRET` (header webhook), `N8N_API_KEY` (doar deploy).
+- Dezactivare integrare: `n8n.enabled: false` → pipeline-ul rulează doar cu Excel local.
+- Polling automat: încarcă `scripts/com.jobapp.poll.plist` cu
+  `launchctl load -w ~/Library/LaunchAgents/com.jobapp.poll.plist`.
+
 ## Structura proiect
 
 ```
