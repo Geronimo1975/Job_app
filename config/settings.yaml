@@ -133,3 +133,14 @@ output:
   reports_dir: "output/reports"
   sent_dir: "output/sent_emails"
   log_level: "INFO"
+
+# ── n8n Integration ─────────────────────────────────────────
+n8n:
+  enabled: true
+  base_url: "https://app.n8n-studio.com"
+  paths:
+    ingest: "/webhook/jobapp-ingest"
+    pending: "/webhook/jobapp-pending"
+  secret_env: "N8N_WEBHOOK_SECRET"
+  poll_interval_min: 10
+  timeout_sec: 20
