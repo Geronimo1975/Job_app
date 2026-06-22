@@ -1,0 +1,64 @@
+{
+  "name": "JobApp Ingest",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jobapp-ingest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-ingest",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "jobapp-ingest"
+    },
+    {
+      "parameters": {
+        "jsCode": "const secret = $env.JOBAPP_SECRET || '';\nconst got = ($json.headers && $json.headers['x-jobapp-secret']) || '';\nif (!secret || got !== secret) { throw new Error('unauthorized'); }\nconst jobs = ($json.body && $json.body.jobs) || [];\nreturn jobs.map(j => ({ json: j }));"
+      },
+      "id": "code-ingest",
+      "name": "Validate & Expand",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "id", "value": "1p0u4XcMxOWex2-OTfIxnvpun3NVFkrqh3DvLWhRBkO0" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Job Applications" },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["URL"]
+        },
+        "options": {}
+      },
+      "id": "gs-upsert",
+      "name": "Write to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [700, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"upserted\": $items().length } }}"
+      },
+      "id": "respond-ingest",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [920, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Validate & Expand", "type": "main", "index": 0 }]] },
+    "Validate & Expand": { "main": [[{ "node": "Write to Google Sheets", "type": "main", "index": 0 }]] },
+    "Write to Google Sheets": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  }
+}

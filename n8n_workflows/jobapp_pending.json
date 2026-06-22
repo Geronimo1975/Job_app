@@ -1,0 +1,68 @@
+{
+  "name": "JobApp Pending",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jobapp-pending",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-pending",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "jobapp-pending"
+    },
+    {
+      "parameters": {
+        "jsCode": "const secret = $env.JOBAPP_SECRET || '';\nconst got = ($json.headers && $json.headers['x-jobapp-secret']) || '';\nif (!secret || got !== secret) { throw new Error('unauthorized'); }\nreturn [{ json: {} }];"
+      },
+      "id": "code-auth",
+      "name": "Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "1p0u4XcMxOWex2-OTfIxnvpun3NVFkrqh3DvLWhRBkO0" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Job Applications" },
+        "options": {}
+      },
+      "id": "gs-read",
+      "name": "Read Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [660, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map(i => i.json);\nconst pending = rows.filter(r => String(r['Sende Befehl']||'').toUpperCase()==='SENDEN' && String(r['Email Status']||'').toUpperCase()!=='GESENDET');\nconst commands = pending.map(r => ({ action: 'send', URL: r['URL'], Firma: r['Firma'], Position: r['Position'], 'Kontakt Email': r['Kontakt Email'], Sprache: r['Sprache'], Anschreiben: r['Anschreiben'] }));\nreturn [{ json: { ok: true, commands } }];"
+      },
+      "id": "code-filter",
+      "name": "Filter SENDEN",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{ $json }}" },
+      "id": "respond-pending",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Auth", "type": "main", "index": 0 }]] },
+    "Auth": { "main": [[{ "node": "Read Sheet", "type": "main", "index": 0 }]] },
+    "Read Sheet": { "main": [[{ "node": "Filter SENDEN", "type": "main", "index": 0 }]] },
+    "Filter SENDEN": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  }
+}
