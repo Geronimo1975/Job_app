@@ -14,11 +14,14 @@ lxml>=5.0.0
 # AI / LLM
 anthropic>=0.40.0
 
+# PDF (render Anschreiben + asamblare Bewerbung)
+fpdf2>=2.7.0
+pypdf>=4.0.0
+
 # Testing
 pytest>=8.0.0
 pytest-mock>=3.12.0
 
 # Optional (uncomment if needed)
 # openai>=1.0.0
-# fpdf2>=2.7.0
 # playwright>=1.40.0

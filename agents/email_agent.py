@@ -138,16 +138,28 @@ class EmailAgent(BaseAgent):
         return self._finish(result)
 
     def _collect_attachments(self, job: dict) -> list[Path]:
-        """Colectează toate atașamentele pentru un job."""
-        attachments = []
+        """Colectează atașamentele, preferând PDF-ul.
+
+        Prioritate:
+          1. „Bewerbung Komplett" (un singur PDF: Anschreiben + CV + certificate)
+          2. Anschreiben PDF + CV + certificate (separate)
+          3. Fallback: Anschreiben .txt + CV + certificate (doar dacă lipsesc PDF-urile)
+        """
         docs_config = self.config.get("documents", {})
 
-        # Cover letter
-        cl_path = job.get("cover_letter_path", "")
-        if cl_path:
-            p = Path(cl_path)
-            if p.exists():
-                attachments.append(p)
+        # 1. PDF combinat — autosuficient
+        komplett = job.get("bewerbung_pdf_path", "")
+        if komplett and Path(komplett).exists():
+            return [Path(komplett)]
+
+        attachments = []
+
+        # 2/3. Anschreiben: preferă PDF-ul, cade pe .txt
+        cl_pdf = job.get("cover_letter_pdf_path", "")
+        cl_txt = job.get("cover_letter_path", "")
+        anschreiben = cl_pdf if (cl_pdf and Path(cl_pdf).exists()) else cl_txt
+        if anschreiben and Path(anschreiben).exists():
+            attachments.append(Path(anschreiben))
 
         # CV
         cv_path = self.project_root / docs_config.get(
@@ -156,13 +168,12 @@ class EmailAgent(BaseAgent):
         if cv_path.exists():
             attachments.append(cv_path)
 
-        # Zertifikate dir — adaugă toate PDF-urile
+        # Certificate
         certs_dir = self.project_root / docs_config.get(
             "certificates_dir", "documents/certificates"
         )
         if certs_dir.exists():
-            for cert in sorted(certs_dir.glob("*.pdf")):
-                attachments.append(cert)
+            attachments.extend(sorted(certs_dir.glob("*.pdf")))
 
         return attachments
 

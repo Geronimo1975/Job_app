@@ -98,6 +98,30 @@ class CoverLetterAgent(BaseAgent):
                 result.items_succeeded += 1
                 self.logger.info(f"  ✅ Salvat: {filepath.name}")
 
+                # Render PDF Anschreiben + asamblare Bewerbung completă (CV + certificate).
+                # Rezilient: un eșec aici NU pică generarea .txt deja salvată.
+                try:
+                    from generators.pdf_gen import text_to_pdf, assemble_bewerbung
+
+                    pdf_path = filepath.with_suffix(".pdf")
+                    text_to_pdf(text, pdf_path)
+                    job["cover_letter_pdf_path"] = str(pdf_path)
+
+                    cv = self.project_root / self.config.get("documents", {}).get("cv_file", "")
+                    if cv.exists():
+                        komplett = filepath.with_name(
+                            filepath.stem.replace("Anschreiben_", "Bewerbung_Komplett_") + ".pdf"
+                        )
+                        certs_dir = self.project_root / self.config.get("documents", {}).get(
+                            "certificates_dir", ""
+                        )
+                        certs = sorted(certs_dir.glob("*.pdf")) if certs_dir.exists() else []
+                        assemble_bewerbung(text, cv, komplett, certificates=certs)
+                        job["bewerbung_pdf_path"] = str(komplett)
+                        self.logger.info(f"  📎 Bewerbung komplett: {komplett.name}")
+                except Exception as pdf_err:
+                    self.logger.warning(f"  ⚠ PDF Anschreiben eșuat ({company}): {pdf_err}")
+
             except Exception as e:
                 self.logger.error(f"  ❌ Eroare la {company}: {e}")
                 result.errors.append(f"{company}: {e}")
