@@ -34,7 +34,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = items.map(i => i.json);\nconst pending = rows.filter(r => String(r['Sende Befehl']||'').toUpperCase()==='SENDEN' && String(r['Email Status']||'').toUpperCase()!=='GESENDET');\nconst commands = pending.map(r => ({ action: 'send', URL: r['URL'], Firma: r['Firma'], Position: r['Position'], 'Kontakt Email': r['Kontakt Email'], Sprache: r['Sprache'], Anschreiben: r['Anschreiben'] }));\nreturn [{ json: { ok: true, commands } }];"
+        "jsCode": "const rows = items.map(i => i.json);\nconst pending = rows.filter(r => String(r['Sende Befehl']||'').toUpperCase()==='SENDEN' && String(r['Email Status']||'').toUpperCase()!=='GESENDET');\nconst commands = pending.map(r => ({ action: 'send', 'Apply URL': r['Apply URL'], Firma: r['Firma'], Position: r['Position'], 'Kontakt Email': r['Kontakt Email'], Sprache: r['Sprache'], 'Anschreiben PDF': r['Anschreiben PDF'], 'Email Status': r['Email Status'] }));\nreturn [{ json: { ok: true, commands } }];"
       },
       "id": "code-filter",
       "name": "Filter SENDEN",

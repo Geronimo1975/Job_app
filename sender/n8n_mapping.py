@@ -1,6 +1,7 @@
 """
 Mapping între dict-ul intern de job (chei engleze) și headerele germane ale
-Google Sheet-ului „Job Applications". Funcții pure, fără I/O.
+Google Sheet-ului „Bewerbungen" (tab din „Job Application Tracker").
+Valorile = numele EXACT al coloanelor din Sheet. Funcții pure, fără I/O.
 """
 
 # internal_key -> german_header (1:1, valori simple)
@@ -8,14 +9,13 @@ FIELD_MAP = {
     "company": "Firma",
     "title": "Position",
     "location": "Standort",
-    "url": "URL",
+    "url": "Apply URL",
     "source": "Quelle",
     "email_hr": "Kontakt Email",
     "contact_person": "Kontakt Person",
     "language": "Sprache",
     "status": "Status",
-    "cover_letter": "Anschreiben",
-    "email_inhalt": "Email Inhalt",
+    "cover_letter": "Anschreiben PDF",
     "gesendet_am": "Gesendet am",
     "email_status": "Email Status",
     "notizen": "Notizen",
@@ -31,14 +31,12 @@ def job_to_sheet_row(job: dict) -> dict:
     for internal_key, german in FIELD_MAP.items():
         row[german] = job.get(internal_key, "")
 
-    # Câmpuri derivate din analiză
+    # Câmpuri derivate din analiză (doar coloane care există în Sheet)
     analysis = job.get("analysis", {}) or {}
     score = analysis.get("match_score", job.get("match_score", ""))
     row["Match Score"] = score if score is not None else ""
-    skills = analysis.get("matching_skills", [])
-    row["Keywords Match"] = ", ".join(skills) if skills else job.get("keywords_match", "")
 
-    row["Gefunden am"] = job.get("gefunden_am", "")
+    row["Datum gefunden"] = job.get("gefunden_am", "")
     return row
 
 

@@ -35,7 +35,7 @@
         "sheetName": { "__rl": true, "mode": "name", "value": "Bewerbungen" },
         "columns": {
           "mappingMode": "autoMapInputData",
-          "matchingColumns": ["URL"]
+          "matchingColumns": ["Apply URL"]
         },
         "options": {}
       },

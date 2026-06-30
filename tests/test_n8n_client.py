@@ -34,7 +34,7 @@ def test_ingest_posts_mapped_rows_with_secret(monkeypatch):
     args, kwargs = p.call_args
     assert kwargs["headers"]["X-JobApp-Secret"] == "s3cr3t"
     assert kwargs["json"]["event"] == "jobs_upsert"
-    assert kwargs["json"]["jobs"][0]["URL"] == "u1"
+    assert kwargs["json"]["jobs"][0]["Apply URL"] == "u1"
     assert kwargs["json"]["jobs"][0]["Firma"] == "X"
 
 
