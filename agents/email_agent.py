@@ -78,6 +78,7 @@ class EmailAgent(BaseAgent):
                     position=position,
                     contact_person=contact,
                     language=language,
+                    analysis=job.get("analysis", {}),
                 )
 
                 # Subject

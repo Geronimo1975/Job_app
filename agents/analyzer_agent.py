@@ -162,7 +162,7 @@ class AnalyzerAgent(BaseAgent):
             "matching_skills": matching,
             "missing_skills": missing[:5],
             "key_requirements": requirements[:5],
-            "language": "de" if any(w in description for w in ["und", "für", "wir"]) else "en",
+            "language": self._detect_language(description),
             "seniority": self._detect_seniority(description),
             "summary": f"Keyword match: {len(matching)}/{len(self.all_skills)} skills",
             "method": "keyword",
@@ -181,7 +181,7 @@ class AnalyzerAgent(BaseAgent):
 
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model=self.config.get("ai", {}).get("model", "claude-sonnet-4-20250514"),
+            model=self.config.get("ai", {}).get("model", "claude-sonnet-4-6"),
             max_tokens=800,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
@@ -215,6 +215,30 @@ class AnalyzerAgent(BaseAgent):
                 if req and req not in requirements:
                     requirements.append(req)
         return requirements
+
+    # Cuvinte-marker pe limbă (comparate pe granițe de cuvânt, nu substring)
+    _DE_MARKERS = [
+        "und", "für", "wir", "mit", "eine", "einen", "deine", "ihre", "aufgaben",
+        "kenntnisse", "erfahrung", "unternehmen", "stelle", "bewerbung", "sie",
+        "abgeschlossene", "sowie", "oder", "bei",
+    ]
+    _EN_MARKERS = [
+        "and", "the", "you", "with", "team", "experience", "skills", "role", "we",
+        "your", "requirements", "our", "ability", "work", "for", "in", "of",
+    ]
+
+    def _detect_language(self, text: str) -> str:
+        """Detectează limba anunțului prin scoring pe cuvinte întregi.
+
+        Robust față de euristica veche cu substring (ex: „und" în „around"/
+        „background"). Cade pe default_language când nu există semnal clar.
+        """
+        t = text.lower()
+        de = sum(len(re.findall(rf"\b{w}\b", t)) for w in self._DE_MARKERS)
+        en = sum(len(re.findall(rf"\b{w}\b", t)) for w in self._EN_MARKERS)
+        if de == 0 and en == 0:
+            return self.config.get("ai", {}).get("default_language", "de")
+        return "de" if de >= en else "en"
 
     def _detect_seniority(self, text: str) -> str:
         """Detectează nivelul de seniority."""

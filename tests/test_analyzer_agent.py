@@ -22,6 +22,20 @@ class TestAnalyzerAgent:
         assert analyzer.name == "AnalyzerAgent"
         assert analyzer.status == AgentStatus.IDLE
 
+    def test_detect_language_german(self, analyzer):
+        txt = "wir suchen einen entwickler für unser team mit erfahrung und kenntnissen"
+        assert analyzer._detect_language(txt) == "de"
+
+    def test_detect_language_english(self, analyzer):
+        txt = "we are looking for an engineer with experience in your team and strong skills"
+        assert analyzer._detect_language(txt) == "en"
+
+    def test_detect_language_substring_not_misclassified(self, analyzer):
+        # 'around'/'background' conțin 'und' ca substring — euristica veche le
+        # clasifica greșit drept germană. Word-boundary trebuie să dea 'en'.
+        txt = "you work in the background around our team with experience and skills"
+        assert analyzer._detect_language(txt) == "en"
+
     def test_keyword_analysis_high_match(self, analyzer, sample_job):
         """Job cu multe skill-uri matching => scor mare."""
         result = analyzer.run(jobs=[sample_job], use_ai=False, min_score=0)

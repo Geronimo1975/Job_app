@@ -6,6 +6,7 @@ adaptate la fiecare job description.
 """
 
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -142,7 +143,13 @@ class CoverLetterGenerator:
             else:
                 raise ValueError(f"AI provider necunoscut: {provider}")
         except Exception as e:
-            # Fallback: generare din template fără AI
+            # Fallback: generare din template fără AI.
+            # Avertizează vizibil (stderr) — fallback-ul NU mai e silențios,
+            # dar textul livrat rămâne curat (fără note vizibile în scrisoare).
+            print(
+                f"  ⚠ Anschreiben AI eșuat ({company}) → fallback template fără AI: {e}",
+                file=sys.stderr,
+            )
             return self._generate_template_fallback(
                 company, position, job_description, location, language, str(e)
             )
@@ -171,18 +178,14 @@ Bewerbung als {position}
 
 Sehr geehrte Damen und Herren,
 
-mit großem Interesse habe ich Ihre Stellenanzeige als {position} bei {company} gelesen und möchte mich hiermit auf diese Position bewerben.
+die ausgeschriebene Position als {position} bei {company} hat sofort mein Interesse geweckt – sie verbindet genau die technischen Schwerpunkte, mit denen ich täglich arbeite.
 
 Als erfahrener Entwickler mit Schwerpunkten in {skills} bringe ich eine starke technische Basis mit, die ich gerne in Ihrem Team einbringen möchte. Meine Erfahrung in der Umsetzung komplexer Integrationsprojekte und meine Fähigkeit, technische Anforderungen in effiziente Lösungen zu übersetzen, machen mich zu einem geeigneten Kandidaten für diese Rolle.
-
-Besonders reizt mich die Möglichkeit, bei {company} an der Weiterentwicklung der Systemarchitektur mitzuwirken und meine Expertise in API-Design, Workflow-Automatisierung und Datenintegration einzubringen.
 
 Meine vollständigen Bewerbungsunterlagen finden Sie im Anhang. Ich freue mich auf Ihre Rückmeldung und stehe gerne für ein persönliches Gespräch zur Verfügung.
 
 Mit freundlichen Grüßen,
-{name}
-
-[Hinweis: Anschreiben ohne AI generiert — {error_msg[:80]}]"""
+{name}"""
         else:
             return f"""{name}
 {email}
@@ -206,9 +209,7 @@ I am particularly excited about the opportunity to contribute to {company}'s tec
 Please find my complete application documents attached.
 
 Best regards,
-{name}
-
-[Note: Cover letter generated without AI — {error_msg[:80]}]"""
+{name}"""
 
     def _generate_anthropic(self, system: str, prompt: str) -> str:
         """Generare cu Claude API."""
@@ -217,7 +218,7 @@ Best regards,
 
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model=self.ai_config.get("model", "claude-sonnet-4-20250514"),
+            model=self.ai_config.get("model", "claude-sonnet-4-6"),
             max_tokens=self.ai_config.get("max_tokens", 2000),
             temperature=self.ai_config.get("temperature", 0.7),
             system=system,

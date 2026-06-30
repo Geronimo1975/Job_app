@@ -84,7 +84,7 @@ scraping:
 ai:
   # Provider: "anthropic" sau "openai"
   provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
+  model: "claude-sonnet-4-6"
   # Temperatura pentru generare cover letter
   temperature: 0.7
   # Limba preferată pentru Anschreiben
