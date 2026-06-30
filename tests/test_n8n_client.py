@@ -80,3 +80,28 @@ def test_retries_once_on_5xx_then_raises(monkeypatch):
         with pytest.raises(RuntimeError):
             client.ingest([{"url": "u"}])
     assert p.call_count == 2
+
+
+def test_upload_doc_posts_base64_pdf(monkeypatch, tmp_path):
+    import base64
+    monkeypatch.setenv("N8N_WEBHOOK_SECRET", "s")
+    client = N8nClient(BASE_CFG)
+    f = tmp_path / "Anschreiben_X.pdf"
+    f.write_bytes(b"%PDF-1.4 test-bytes")
+    with patch("sender.n8n_client.httpx.post",
+               return_value=_resp(200, {"ok": True, "link": "L", "fileId": "F"})) as p:
+        out = client.upload_doc(f, row=5, apply_url="u1")
+    assert out == {"ok": True, "link": "L", "fileId": "F"}
+    body = p.call_args.kwargs["json"]
+    assert body["action"] == "upload_doc"
+    assert body["row"] == 5 and body["filename"] == "Anschreiben_X.pdf"
+    assert base64.b64decode(body["content_base64"]) == b"%PDF-1.4 test-bytes"
+
+
+def test_upload_doc_disabled_is_noop(monkeypatch, tmp_path):
+    client = N8nClient({"n8n": dict(BASE_CFG["n8n"], enabled=False)})
+    f = tmp_path / "x.pdf"
+    f.write_bytes(b"x")
+    with patch("sender.n8n_client.httpx.post") as p:
+        assert client.upload_doc(f, row=1)["skipped"] is True
+    p.assert_not_called()

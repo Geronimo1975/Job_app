@@ -5,7 +5,9 @@ Nu atinge Google direct: trimite/cere date de la n8n, care deține Sheet-ul.
 Respectă flag-ul n8n.enabled (no-op când e dezactivat).
 """
 
+import base64
 import os
+from pathlib import Path
 
 import httpx
 
@@ -24,13 +26,13 @@ class N8nClient:
         secret_env = cfg.get("secret_env", "N8N_WEBHOOK_SECRET")
         self.secret: str = os.environ.get(secret_env, "")
 
-    def _post(self, path_key: str, payload: dict) -> dict:
+    def _post(self, path_key: str, payload: dict, timeout: int | None = None) -> dict:
         url = f"{self.base_url}{self.paths.get(path_key, '')}"
         headers = {"X-JobApp-Secret": self.secret, "Content-Type": "application/json"}
         last_err = None
         for _ in range(2):  # 1 încercare + 1 retry
             try:
-                resp = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
+                resp = httpx.post(url, json=payload, headers=headers, timeout=timeout or self.timeout)
                 if resp.status_code >= 500:
                     last_err = RuntimeError(f"n8n 5xx: {resp.status_code}")
                     continue
@@ -60,3 +62,19 @@ class N8nClient:
             return []
         data = self._post("pending", {"action": "get_pending"})
         return data.get("commands", [])
+
+    def upload_doc(self, pdf_path: str | Path, row: int, apply_url: str = "") -> dict:
+        """Urcă un PDF la n8n → Google Drive; n8n scrie linkul în col O „Anschreiben PDF".
+
+        Întoarce `{ok, link, fileId}` sau no-op dacă n8n e dezactivat.
+        """
+        if not self.enabled:
+            return {"ok": False, "skipped": True}
+        p = Path(pdf_path)
+        b64 = base64.b64encode(p.read_bytes()).decode()
+        return self._post(
+            "upload",
+            {"action": "upload_doc", "row": row, "filename": p.name,
+             "content_base64": b64, "apply_url": apply_url},
+            timeout=90,
+        )

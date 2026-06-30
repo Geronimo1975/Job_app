@@ -141,6 +141,8 @@ n8n:
   paths:
     ingest: "/webhook/jobapp-ingest"
     pending: "/webhook/jobapp-pending"
+    upload: "/webhook/jobapp-upload"
+    trigger: "/webhook/jobapp-trigger"
   secret_env: "N8N_WEBHOOK_SECRET"
   poll_interval_min: 10
   timeout_sec: 20
