@@ -1,111 +1,85 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Job_app — Multi-Agent Bewerbung Pipeline
 
-Pipeline automatizat pentru aplicarea la joburi in industria gaming/tech din Germania.
+Pipeline automatizat pentru aplicarea la joburi în industria gaming/tech din Germania.
 
 ## Rulare
 
 ```bash
-# Activare venv
 source .venv/bin/activate
 
-# Pipeline complet (dry-run, implicit)
-python3 main.py --step full
-
-# Doar un pas specific
-python3 main.py --step scrape          # Scraping joburi
-python3 main.py --step analyze         # Analiza + Match Score
-python3 main.py --step generate        # Generare Anschreiben (cover letter)
-python3 main.py --step organize        # Organizare documente
-python3 main.py --step verify          # Verificare documente
+python3 main.py --step full            # Pipeline complet (dry-run implicit)
+python3 main.py --step scrape          # Scraping (JobSpy: Indeed/Glassdoor/Google + career pages)
+python3 main.py --step analyze         # Analiză + Match Score (AI)
+python3 main.py --step generate        # Generare Anschreiben (AI)
 python3 main.py --step send            # Trimitere email (dry-run)
-python3 main.py --step send --live     # Trimitere email LIVE
-python3 main.py --step report          # Raport status
+python3 main.py --step send --live     # Trimitere email LIVE (cere confirmare interactivă)
+python3 main.py --step poll            # Trigger Sheet→trimite (vezi „Două sisteme de trigger")
+python3 main.py --step report
 
-# Optiuni aditionale
-python3 main.py --min-score 50         # Filtru scor minim (default: 30)
-python3 main.py --provider brevo       # SMTP provider: gmx (default) sau brevo
-python3 main.py --no-ai                # Dezactiveaza AI pt analiza
+# Opțiuni: --min-score 50 | --provider {gmx,brevo} | --no-ai
 ```
 
-### n8n / Google Sheets (integrare)
-
-Trackerul e oglindit într-un Google Sheet prin n8n (sursă de adevăr = Sheet).
-Python nu atinge Google direct; vorbește cu n8n via webhook.
+## Teste
 
 ```bash
-python3 main.py --step poll        # Preia comenzile SENDEN din Sheet și trimite
-python3 scripts/deploy_n8n_workflows.py   # (Re)deploy workflow-uri n8n
+python -m pytest -q                              # Toată suita (tests/, configurat în pytest.ini)
+python -m pytest tests/test_n8n_client.py -q     # Un fișier
+python -m pytest tests/test_analyzer_agent.py::TestAnalyzerAgent::test_detect_language_german
 ```
 
-- Config: bloc `n8n:` în `config/settings.yaml` (`enabled`, `base_url`, `paths`, `poll_interval_min`).
-- Secrete `.env`: `N8N_WEBHOOK_SECRET` (header webhook), `N8N_API_KEY` (doar deploy).
-- Dezactivare integrare: `n8n.enabled: false` → pipeline-ul rulează doar cu Excel local.
-- Polling automat: copiază plist-ul și încarcă-l cu launchctl:
-  `cp scripts/com.jobapp.poll.plist ~/Library/LaunchAgents/ && launchctl load -w ~/Library/LaunchAgents/com.jobapp.poll.plist`
+Testele folosesc config-ul real (`load_config`) + mock-uri pentru I/O extern (httpx, SMTP). Nu lovesc rețeaua.
 
-## Structura proiect
+## Arhitectură (big picture)
 
-```
-Job_app/
-  main.py                  # Orchestrator principal
-  test_pipeline.py         # Teste
-  requirements.txt         # Dependente Python
-  config/
-    settings.yaml          # Configurare generala (profil, scraping, AI, email)
-    game_studios.yaml      # Lista studiouri gaming pt career page scraping
-    email_templates/       # Template-uri email
-  agents/                  # Agenti pipeline (multi-agent pattern)
-    base_agent.py          # Clasa de baza: AgentResult, AgentStatus, load_config, setup_logger
-    scraper_agent.py       # Scraping joburi (JobSpy + Career Pages)
-    analyzer_agent.py      # Analiza cerinte + Match Score (AI)
-    cover_letter_agent.py  # Generare Anschreiben personalizate (AI)
-    document_agent.py      # Organizare si verificare documente
-    email_agent.py         # Trimitere emailuri SMTP
-    tracker_agent.py       # Sync cu Excel Tracker
-  generators/
-    cover_letter_gen.py    # Generator Anschreiben (Anthropic API)
-    email_body_gen.py      # Generator body email
-  scrapers/
-    jobspy_scraper.py      # Scraper via python-jobspy
-    career_page_scraper.py # Scraper career pages custom
-  sender/
-    smtp_sender.py         # SMTP sender (GMX / Brevo)
-  tracker/
-    excel_tracker.py       # Excel tracker (openpyxl)
-  documents/               # Documente aplicant (CV, certificate, scrisori)
-  archive/                 # Scripturi vechi, nefolosite
-  data/                    # Date runtime (Excel tracker, backups) - gitignored
-  output/                  # Output runtime (logs, reports, sent_emails) - gitignored
-```
+**Pattern multi-agent.** `main.py` are două căi de execuție separate:
+- `run_pipeline()` — pașii scrape→analyze→generate→organize→verify→send, înlănțuiți prin `pipeline_jobs`.
+- `run_poll()` — trigger din Sheet (NU înlănțuie pașii pipeline).
 
-## Setup
+Fiecare agent moștenește `agents/base_agent.py`, implementează `run()` și întoarce un `AgentResult` (`AgentStatus`: SUCCESS/PARTIAL/FAILED/RUNNING/IDLE). Datele curg între agenți prin `result.data`.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-mkdir -p data output/logs output/reports output/sent_emails
-cp .env.example .env  # Completeaza cheile API
-```
+**Gardă de mediu.** `validate_environment()` blochează `run_pipeline()` dacă lipsesc `ANTHROPIC_API_KEY`, parola SMTP, directoarele `data/`/`output/`, sau fișierul CV. `run_poll()` NU trece prin această gardă. Pentru a testa scraping-ul izolat fără secrete, instanțiază `ScraperAgent().run(...)` direct.
 
-## Dependente principale
+**Sheet = sursă de adevăr.** Python nu atinge Google direct — vorbește cu n8n prin webhook. `sender/n8n_mapping.py` (`FIELD_MAP`) mapează cheile interne engleze ↔ headerele germane EXACTE ale Sheet-ului. Headerele reale contează: `url→"Apply URL"`, `cover_letter→"Anschreiben PDF"`, `gefunden_am→"Datum gefunden"`. Coloane inexistente în Sheet NU trebuie scrise (creează coloane fantomă la upsert).
 
-- `pyyaml` - configurare YAML
-- `openpyxl` - Excel tracker
-- `python-jobspy` - scraping joburi
-- `httpx`, `beautifulsoup4`, `lxml` - web scraping
-- `anthropic` - Claude API pt generare cover letter si analiza
+**Generare text.** `cover_letter_gen.py` (Anschreiben AI, system prompt DE/EN, injectează `matching_skills`+cerințe via `special_instructions`) și `email_body_gen.py` (body din `config/email_templates/`, personalizat din `analysis`, salut german pe gen). Ambele cad pe template/fallback la eroare AI — `cover_letter_gen` avertizează pe stderr ca să nu fie silențios.
 
-## Configurare
+### Două sisteme de trigger pe ACELAȘI Sheet (atenție — se pot bate)
 
-- `config/settings.yaml` - configurare centrala (profil, skills, scraping, AI, email, tracker)
-- `.env` - secrete: `ANTHROPIC_API_KEY`, `GMX_PASSWORD`, `BREVO_SMTP_KEY`
+| | Sistem A (Apps Script, producție) | Sistem B (acest repo) |
+|---|---|---|
+| Trigger | scrii `send` în **coloana M „Status"** | `--step poll`: `SENDEN` în **coloana P „Sende Befehl"** |
+| Mecanism | Apps Script `onEdit` → POST webhook | Python interoghează n8n (poll) |
+| Backend | `app.n8n-studio.com/webhook/jobapp-trigger` (vechiul `jobs.get-hub.io` e **mort** — vezi mai jos) | n8n `JobApp Pending` |
+| Stare | mașină de stări col M: `plan→send→running→done/error`; erori logate în col W „Notizen" | `Email Status=GESENDET` |
 
-## Conventii
+Apps Script-ul (bound la Sheet, NU în repo) e front-end-ul producției: declanșează și pe URL paste în col E (scrape) și pe col AB (Danke). La eșec scrie `error` în M + motivul în col W.
 
-- Python 3.12+
-- Comentarii si mesaje in limba romana
-- Fiecare agent mosteneste din `agents/base_agent.py` si implementeaza `run()`
-- `AgentResult` cu `AgentStatus` (SUCCESS, PARTIAL, FAILED, RUNNING, IDLE)
-- Dry-run implicit pt trimitere email (flag `--live` pt productie)
-- Config centralizata in `settings.yaml`, secrete in `.env`
+### n8n — detalii critice
+
+- **Instanța proiectului = `app.n8n-studio.com`** (config `n8n.base_url`). Acces programatic prin **API public cu `N8N_API_KEY`** din `.env` (vezi `scripts/deploy_n8n_workflows.py`).
+- **Tool-urile MCP n8n (`mcp__n8n-mcp__*`, `mcp__claude_ai_n8n__*`) sunt conectate la ALTĂ instanță** (`n8n.rotocon.world`) — NU folosi MCP pentru workflow-urile acestui proiect; folosește API-ul public.
+- **`$env` e blocat în nodurile Code** pe această instanță → pentru secrete pe webhook folosește credential nativ **Header Auth** (`X-JobApp-Secret`), nu `$env`.
+- Workflow-uri: `JobApp Ingest`/`Pending` (upsert/read Sheet), `JobApp Trigger` (endpoint Apps Script). Sheet real: doc `1fTjvs6...`, tab `Bewerbungen` (28 coloane), Google Sheets OAuth credential în n8n.
+- Pentru apeluri Google Sheets API arbitrare (citire/ștergere/validări) când nu există un workflow: creează un workflow temporar Webhook→HTTP Request (cu credential `googleSheetsOAuth2Api`)→Respond, execută, apoi șterge-l.
+- **`*.get-hub.io` NU mai e valabil** (instanța veche pe `2.57.91.92`, jos). Nu mai folosi `jobs.get-hub.io` / `n8n.get-hub.io` ca backend. Job Tracker Webhook (uvicorn :8765 pe VPS `85.215.69.83`) e acum expus pe **`https://job.n8n-studio.com`** — ruta Traefik `Host(\`job.n8n-studio.com\`)` în `/opt/gethub/traefik/dynamic/jobs.yml` (TLS Let's Encrypt OK; `/health` și `/docs` → 200). Toate domeniile active ale proiectului sunt pe `*.n8n-studio.com` (VPS `85.215.69.83`).
+
+### Documente
+
+`documents/` în repo e **doar schelet** (`.gitkeep` + `Signature.png`) — CV-ul, Anschreiben-urile și certificatele NU sunt aici (sunt pe hostul de producție / iCloud). n8n cloud nu poate atașa fișiere locale; pentru attachment-uri trebuie linkuri Drive în Sheet.
+
+## Configurare & secrete
+
+- `config/settings.yaml` — profil, skills, scraping, AI, email, bloc `n8n:`. **Modelul AI trebuie să fie un ID valid curent** (ex. `claude-sonnet-4-6`); un model dispărut dă 404 → fallback silențios la template.
+- `.env` (gitignored) — `ANTHROPIC_API_KEY` (verifică să nu fie duplicat/placeholder), `GMX_PASSWORD`/`BREVO_SMTP_KEY`, `N8N_WEBHOOK_SECRET` (= valoarea credentialului Header Auth din n8n), `N8N_API_KEY` (doar deploy).
+- Dezactivare n8n: `n8n.enabled: false` → pipeline doar cu Excel local (`tracker/excel_tracker.py`).
+
+## Convenții
+
+- Python 3.12+; comentarii și mesaje în limba română.
+- Commit-uri în română cu tag `JOB-NN` (ex. `fix(n8n): ... (JOB-20)`).
+- Dry-run implicit pentru email (`--live` pentru producție).
+- Config centralizat în `settings.yaml`, secrete în `.env`.
