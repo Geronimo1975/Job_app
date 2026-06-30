@@ -16,9 +16,10 @@ BASE_CFG = {
 }
 
 
-def _resp(status=200, payload=None):
+def _resp(status=200, payload=None, content=b"{}"):
     m = MagicMock(spec=httpx.Response)
     m.status_code = status
+    m.content = content
     m.json.return_value = payload or {}
     m.raise_for_status.return_value = None
     return m
@@ -53,6 +54,23 @@ def test_disabled_client_is_noop(monkeypatch):
         assert client.ingest([{"url": "u"}]) == {"ok": False, "skipped": True, "upserted": 0}
         assert client.get_pending() == []
     p.assert_not_called()
+
+
+def test_ingest_empty_jobs_is_noop_without_request(monkeypatch):
+    monkeypatch.setenv("N8N_WEBHOOK_SECRET", "s")
+    client = N8nClient(BASE_CFG)
+    with patch("sender.n8n_client.httpx.post") as p:
+        assert client.ingest([]) == {"ok": True, "skipped": True, "upserted": 0}
+    p.assert_not_called()
+
+
+def test_empty_response_body_returns_empty_dict(monkeypatch):
+    monkeypatch.setenv("N8N_WEBHOOK_SECRET", "s")
+    client = N8nClient(BASE_CFG)
+    # 200 cu body gol (n8n nu produce rânduri) → nu crăpa la parse
+    with patch("sender.n8n_client.httpx.post", return_value=_resp(200, content=b"")):
+        assert client.ingest([{"url": "u"}]) == {}
+        assert client.get_pending() == []
 
 
 def test_retries_once_on_5xx_then_raises(monkeypatch):

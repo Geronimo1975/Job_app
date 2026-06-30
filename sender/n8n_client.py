@@ -35,6 +35,10 @@ class N8nClient:
                     last_err = RuntimeError(f"n8n 5xx: {resp.status_code}")
                     continue
                 resp.raise_for_status()
+                # n8n întoarce body gol când workflow-ul nu produce rânduri (ex: 0 joburi);
+                # tratăm asta ca succes fără payload, nu ca eroare de parsare.
+                if not resp.content:
+                    return {}
                 return resp.json()
             except (httpx.TransportError, httpx.HTTPStatusError) as e:
                 last_err = e
@@ -44,6 +48,10 @@ class N8nClient:
     def ingest(self, jobs: list[dict]) -> dict:
         if not self.enabled:
             return {"ok": False, "skipped": True, "upserted": 0}
+        if not jobs:
+            # Nimic de trimis — evităm un request inutil (webhook-ul n8n nu
+            # returnează body când nu există rânduri de procesat).
+            return {"ok": True, "skipped": True, "upserted": 0}
         rows = [job_to_sheet_row(j) for j in jobs]
         return self._post("ingest", {"event": "jobs_upsert", "jobs": rows})
 

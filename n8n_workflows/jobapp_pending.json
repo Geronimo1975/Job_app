@@ -6,6 +6,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "jobapp-pending",
+        "authentication": "headerAuth",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -14,23 +15,14 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [260, 300],
-      "webhookId": "jobapp-pending"
-    },
-    {
-      "parameters": {
-        "jsCode": "const secret = $env.JOBAPP_SECRET || '';\nconst got = ($json.headers && $json.headers['x-jobapp-secret']) || '';\nif (!secret || got !== secret) { throw new Error('unauthorized'); }\nreturn [{ json: {} }];"
-      },
-      "id": "code-auth",
-      "name": "Auth",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [460, 300]
+      "webhookId": "jobapp-pending",
+      "credentials": { "httpHeaderAuth": { "id": "Ko0T1HawgzBeFN0s", "name": "JobApp Webhook Secret" } }
     },
     {
       "parameters": {
         "operation": "read",
-        "documentId": { "__rl": true, "mode": "id", "value": "1p0u4XcMxOWex2-OTfIxnvpun3NVFkrqh3DvLWhRBkO0" },
-        "sheetName": { "__rl": true, "mode": "name", "value": "Job Applications" },
+        "documentId": { "__rl": true, "mode": "id", "value": "1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Bewerbungen" },
         "options": {}
       },
       "id": "gs-read",
@@ -60,8 +52,7 @@
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Auth", "type": "main", "index": 0 }]] },
-    "Auth": { "main": [[{ "node": "Read Sheet", "type": "main", "index": 0 }]] },
+    "Webhook": { "main": [[{ "node": "Read Sheet", "type": "main", "index": 0 }]] },
     "Read Sheet": { "main": [[{ "node": "Filter SENDEN", "type": "main", "index": 0 }]] },
     "Filter SENDEN": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
   }
