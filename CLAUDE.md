@@ -56,14 +56,14 @@ Fiecare agent moștenește `agents/base_agent.py`, implementează `run()` și î
 | Backend | `app.n8n-studio.com/webhook/jobapp-trigger` (vechiul `jobs.get-hub.io` e **mort** — vezi mai jos) | n8n `JobApp Pending` |
 | Stare | mașină de stări col M: `plan→send→running→done/error`; erori logate în col W „Notizen" | `Email Status=GESENDET` |
 
-Apps Script-ul (bound la Sheet, NU în repo) e front-end-ul producției: declanșează și pe URL paste în col E (scrape) și pe col AB (Danke). La eșec scrie `error` în M + motivul în col W.
+Apps Script-ul (bound la Sheet, sursă trackuită la `scripts/jobapp_appscript.gs`) e front-end-ul producției: declanșează și pe URL paste în col E (scrape) și pe col AB (Danke). La eșec scrie `error` în M + motivul în col W.
 
 ### n8n — detalii critice
 
 - **Instanța proiectului = `app.n8n-studio.com`** (config `n8n.base_url`). Acces programatic prin **API public cu `N8N_API_KEY`** din `.env` (vezi `scripts/deploy_n8n_workflows.py`).
 - **Tool-urile MCP n8n (`mcp__n8n-mcp__*`, `mcp__claude_ai_n8n__*`) sunt conectate la ALTĂ instanță** (`n8n.rotocon.world`) — NU folosi MCP pentru workflow-urile acestui proiect; folosește API-ul public.
 - **`$env` e blocat în nodurile Code** pe această instanță → pentru secrete pe webhook folosește credential nativ **Header Auth** (`X-JobApp-Secret`), nu `$env`.
-- Workflow-uri: `JobApp Ingest`/`Pending` (upsert/read Sheet), `JobApp Trigger` (endpoint Apps Script). Sheet real: doc `1fTjvs6...`, tab `Bewerbungen` (28 coloane), Google Sheets OAuth credential în n8n.
+- Workflow-uri active: `JobApp Ingest`/`Pending` (upsert/read Sheet), `JobApp Upload` (PDF → Google Drive, scrie link-ul în col O „Anschreiben PDF" — vezi `sender/n8n_client.py::upload_doc`, deocamdată neapelat din pipeline). `JobApp Trigger` e un stub ping/pong **neconectat** — NU e endpoint-ul Apps Script (acela e `job.n8n-studio.com/trigger`, alt serviciu, vezi mai jos); păstrat activ + în git (`n8n_workflows/jobapp_trigger.json`) pentru istoric/eventuală reutilizare. Sheet real: doc `1fTjvs6...`, tab `Bewerbungen` (28 coloane), Google Sheets OAuth credential în n8n.
 - Pentru apeluri Google Sheets API arbitrare (citire/ștergere/validări) când nu există un workflow: creează un workflow temporar Webhook→HTTP Request (cu credential `googleSheetsOAuth2Api`)→Respond, execută, apoi șterge-l.
 - **`*.get-hub.io` NU mai e valabil** (instanța veche pe `2.57.91.92`, jos). Nu mai folosi `jobs.get-hub.io` / `n8n.get-hub.io` ca backend. Job Tracker Webhook (uvicorn :8765 pe VPS `85.215.69.83`) e acum expus pe **`https://job.n8n-studio.com`** — ruta Traefik `Host(\`job.n8n-studio.com\`)` în `/opt/gethub/traefik/dynamic/jobs.yml` (TLS Let's Encrypt OK; `/health` și `/docs` → 200). Toate domeniile active ale proiectului sunt pe `*.n8n-studio.com` (VPS `85.215.69.83`).
 
