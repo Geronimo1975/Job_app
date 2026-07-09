@@ -366,12 +366,10 @@ def main():
     parser.add_argument("--live", action="store_true", help="Trimite emailuri efectiv (implicit: dry-run)")
     parser.add_argument("--provider", choices=["gmx", "brevo"], default=None, help="SMTP provider")
     parser.add_argument("--min-score", type=int, default=30, help="Scor minim de match (default: 30)")
-    parser.add_argument("--use-ai", action="store_true", default=True, help="Folosește AI pentru analiză")
-    parser.add_argument("--no-ai", action="store_true", help="Dezactivează AI")
+    parser.add_argument("--no-ai", action="store_true", help="Dezactivează AI (implicit: AI activ)")
 
     args = parser.parse_args()
-    if args.no_ai:
-        args.use_ai = False
+    args.use_ai = not args.no_ai
 
     try:
         if args.step == "poll":
