@@ -8,10 +8,13 @@ Suportă:
   - Logging complet
 """
 
+import fcntl
 import getpass
+import json
 import os
 import smtplib
 import time
+from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -27,8 +30,29 @@ class SmtpSender:
         self.project_root = project_root
         self.email_config = config.get("email", {})
         self.applicant = config.get("applicant", {})
-        self._sent_today = 0
         self._password_cache: dict[str, str] = {}
+        self._rate_state_file = project_root / "output" / "logs" / "email_rate_state.json"
+        self._rate_lock_file = project_root / "output" / "logs" / "email_rate_state.lock"
+        self._sent_today = self._load_sent_today()
+
+    def _load_sent_today(self) -> int:
+        """Citește contorul de azi din fișierul de stare (persistă peste procese noi)."""
+        if not self._rate_state_file.exists():
+            return 0
+        try:
+            state = json.loads(self._rate_state_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return 0
+        today = datetime.now().strftime("%Y-%m-%d")
+        return state.get("count", 0) if state.get("date") == today else 0
+
+    def _save_sent_today(self) -> None:
+        """Scrie contorul curent pe disc, ca următorul proces (ex. launchd poll) să-l vadă."""
+        self._rate_state_file.parent.mkdir(parents=True, exist_ok=True)
+        self._rate_state_file.write_text(json.dumps({
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "count": self._sent_today,
+        }))
 
     @property
     def active_provider(self) -> str:
@@ -161,29 +185,46 @@ class SmtpSender:
         cfg = self._get_smtp_config(provider)
         password = self._get_password(provider)
 
-        server = smtplib.SMTP(cfg["server"], cfg["port"], timeout=30)
-        try:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(cfg["login"], password)
-            server.sendmail(
-                self.applicant.get("email", cfg["login"]),
-                [msg["To"]],
-                msg.as_string(),
-            )
-            self._sent_today += 1
-
-            # Delay între emailuri
-            if self.delay_sec > 0:
-                time.sleep(self.delay_sec)
-
-            return True
-        finally:
+        # Blocare exclusivă pe fișier: evită lost-update dacă rulează două
+        # procese aproape simultan (ex. poll launchd suprapus cu --live manual).
+        self._rate_lock_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._rate_lock_file, "a") as lockf:
+            fcntl.flock(lockf, fcntl.LOCK_EX)
             try:
-                server.quit()
-            except Exception:
-                pass
+                # Re-verifică sub lock, cu valoarea proaspătă de pe disc —
+                # self._sent_today încărcat la construcție poate fi stale.
+                self._sent_today = self._load_sent_today()
+                if self._sent_today >= self.max_per_day:
+                    raise RuntimeError(
+                        f"Rate limit atins: {self._sent_today}/{self.max_per_day} emailuri azi"
+                    )
+
+                server = smtplib.SMTP(cfg["server"], cfg["port"], timeout=30)
+                try:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(cfg["login"], password)
+                    server.sendmail(
+                        self.applicant.get("email", cfg["login"]),
+                        [msg["To"]],
+                        msg.as_string(),
+                    )
+                    self._sent_today += 1
+                    self._save_sent_today()
+                finally:
+                    try:
+                        server.quit()
+                    except Exception:
+                        pass
+            finally:
+                fcntl.flock(lockf, fcntl.LOCK_UN)
+
+        # Delay între emailuri
+        if self.delay_sec > 0:
+            time.sleep(self.delay_sec)
+
+        return True
 
     def send_simple(
         self,
