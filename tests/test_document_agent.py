@@ -73,3 +73,22 @@ class TestDocumentAgent:
         result = doc_agent.run(action="nonexistent_action")
 
         assert result.status == AgentStatus.FAILED
+
+    def test_cleanup_skips_venv_directory(self, tmp_project):
+        """Cleanup nu trebuie să șteargă __pycache__ din .venv (doar fișierele proiectului)."""
+        venv_pycache = tmp_project / ".venv" / "lib" / "somepkg" / "__pycache__"
+        venv_pycache.mkdir(parents=True)
+        (venv_pycache / "mod.cpython-312.pyc").touch()
+
+        project_pycache = tmp_project / "agents" / "__pycache__"
+        project_pycache.mkdir(parents=True)
+        (project_pycache / "mod.cpython-312.pyc").touch()
+
+        with patch("agents.base_agent.PROJECT_ROOT", tmp_project):
+            agent = DocumentAgent()
+            agent.logger.setLevel("CRITICAL")
+            result = agent.run(action="cleanup")
+
+        assert venv_pycache.exists()
+        assert not project_pycache.exists()
+        assert result.status == AgentStatus.SUCCESS

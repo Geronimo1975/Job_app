@@ -28,6 +28,8 @@ FILE_ROUTING = {
 class DocumentAgent(BaseAgent):
     """Agent pentru organizare și management documente."""
 
+    _CLEANUP_EXCLUDE = {".venv", "venv", ".git", "node_modules"}
+
     def __init__(self):
         super().__init__("DocumentAgent")
         self.docs_config = self.config.get("documents", {})
@@ -235,19 +237,27 @@ class DocumentAgent(BaseAgent):
         result.message = f"Package pregătit: {package_dir.name}"
         return result
 
+    def _is_excluded(self, path: Path) -> bool:
+        """True dacă path-ul trece prin .venv/.git/node_modules — nu curățăm dependințe."""
+        return any(part in self._CLEANUP_EXCLUDE for part in path.parts)
+
     def _cleanup_temp_files(self, **kwargs) -> AgentResult:
-        """Curăță fișierele temporare (.tmp, __pycache__, etc.)."""
+        """Curăță fișierele temporare (.tmp, __pycache__, etc.) — exclude .venv/.git."""
         result = AgentResult(agent_name=self.name, status=AgentStatus.RUNNING)
         cleaned = []
 
         # .tmp files
         for tmp in self.project_root.rglob("*.tmp"):
+            if self._is_excluded(tmp):
+                continue
             tmp.unlink()
             cleaned.append(str(tmp))
             self.logger.info(f"  🗑 Șters: {tmp.name}")
 
         # __pycache__
         for cache in self.project_root.rglob("__pycache__"):
+            if self._is_excluded(cache):
+                continue
             shutil.rmtree(cache)
             cleaned.append(str(cache))
 
