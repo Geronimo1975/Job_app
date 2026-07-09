@@ -1,0 +1,113 @@
+{
+  "name": "JobApp Upload",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jobapp-upload",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "jobapp-upload",
+      "credentials": { "httpHeaderAuth": { "id": "Ko0T1HawgzBeFN0s", "name": "JobApp Webhook Secret" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||{};\nreturn [{ json:{ filename:b.filename, row:b.row, apply_url:b.apply_url }, binary:{ data:{ data:b.content_base64, mimeType:'application/pdf', fileName:b.filename } } }];"
+      },
+      "id": "Prep",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/pdf" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "DriveUpload",
+      "name": "DriveUpload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.id }}?fields=id,webViewLink",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Prep').item.json.filename }) }}",
+        "options": {}
+      },
+      "id": "DriveRename",
+      "name": "DriveRename",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M/values/Bewerbungen!O{{ $('Prep').item.json.row }}?valueInputOption=RAW",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[ $json.webViewLink ]] }) }}",
+        "options": {}
+      },
+      "id": "SheetWrite",
+      "name": "SheetWrite",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:true, link: $('DriveRename').item.json.webViewLink, fileId: $('DriveRename').item.json.id } }}"
+      },
+      "id": "Respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Prep", "type": "main", "index": 0 }]] },
+    "Prep": { "main": [[{ "node": "DriveUpload", "type": "main", "index": 0 }]] },
+    "DriveUpload": { "main": [[{ "node": "DriveRename", "type": "main", "index": 0 }]] },
+    "DriveRename": { "main": [[{ "node": "SheetWrite", "type": "main", "index": 0 }]] },
+    "SheetWrite": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  }
+}

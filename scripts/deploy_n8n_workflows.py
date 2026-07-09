@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Deploy workflow-urile JobApp în n8n via public API + dezactivează workflow-ul SSH vechi.
+Deploy workflow-urile JobApp în n8n via public API.
 
 Citește N8N_API_KEY din .env. Idempotent: dacă un workflow cu același nume există,
 îl actualizează în loc să-l dubleze.
@@ -15,8 +15,7 @@ import httpx
 
 ROOT = Path(__file__).parent.parent.resolve()
 BASE = "https://app.n8n-studio.com/api/v1"
-SSH_WORKFLOW_ID = "naxm3lJSXipBoH5r"  # „Job Tracker → Google Sheets Sync" (stricat)
-WORKFLOWS = ["jobapp_ingest.json", "jobapp_pending.json"]
+WORKFLOWS = ["jobapp_ingest.json", "jobapp_pending.json", "jobapp_upload.json", "jobapp_trigger.json"]
 
 
 def _api_key() -> str:
@@ -53,10 +52,6 @@ def main():
         # activează
         ra = httpx.post(f"{BASE}/workflows/{wid}/activate", headers=h, timeout=30)
         print(f"     activate: HTTP {ra.status_code}")
-
-    # Dezactivează workflow-ul SSH stricat
-    rd = httpx.post(f"{BASE}/workflows/{SSH_WORKFLOW_ID}/deactivate", headers=h, timeout=30)
-    print(f"  ⏸ deactivate SSH sync: HTTP {rd.status_code}")
 
 
 if __name__ == "__main__":
