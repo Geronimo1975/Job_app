@@ -14,6 +14,7 @@ FIELD_MAP = {
     "email_hr": "Kontakt Email",
     "contact_person": "Kontakt Person",
     "language": "Sprache",
+    "gefunden_am": "Datum gefunden",
     "status": "Status",
     "cover_letter": "Anschreiben PDF",
     "gesendet_am": "Gesendet am",
@@ -36,7 +37,6 @@ def job_to_sheet_row(job: dict) -> dict:
     score = analysis.get("match_score", job.get("match_score", ""))
     row["Match Score"] = score if score is not None else ""
 
-    row["Datum gefunden"] = job.get("gefunden_am", "")
     return row
 
 

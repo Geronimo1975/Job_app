@@ -43,3 +43,13 @@ def test_job_to_sheet_row_tolerates_missing_fields():
     assert row["Apply URL"] == "u"
     assert row["Firma"] == ""
     assert row["Match Score"] == ""
+
+
+def test_job_to_sheet_row_maps_gefunden_am():
+    row = job_to_sheet_row({"url": "u", "gefunden_am": "2026-07-09"})
+    assert row["Datum gefunden"] == "2026-07-09"
+
+
+def test_sheet_row_to_job_roundtrips_gefunden_am():
+    job = sheet_row_to_job({"Apply URL": "u", "Datum gefunden": "2026-07-09"})
+    assert job["gefunden_am"] == "2026-07-09"

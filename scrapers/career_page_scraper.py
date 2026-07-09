@@ -205,6 +205,7 @@ class CareerPageScraper:
                     "email_hr": email,
                     "language": studio.get("language", "en"),
                     "scraped_at": datetime.now().isoformat(),
+                    "gefunden_am": datetime.now().strftime("%Y-%m-%d"),
                     "applied": False,
                     "status": "new",
                 }

@@ -63,3 +63,23 @@ class TestExtractEmail:
         soup = BeautifulSoup("<html><body><p>Keine Kontaktdaten hier.</p></body></html>", "html.parser")
         email = scraper._extract_email(soup, "https://studio.de/careers", {})
         assert email == ""
+
+
+class TestScrapeStudioMetadata:
+    @patch("scrapers.career_page_scraper.httpx.get")
+    def test_scrape_studio_sets_gefunden_am(self, mock_get, scraper):
+        response = MagicMock()
+        response.text = '<html><body><a href="/jobs/python-dev">Python Developer Position</a></body></html>'
+        response.raise_for_status.return_value = None
+        mock_get.return_value = response
+
+        jobs = scraper._scrape_studio({
+            "name": "TestStudio",
+            "career_url": "https://teststudio.de/jobs",
+            "email_hr": "hr@teststudio.de",
+        })
+
+        assert len(jobs) == 1
+        assert "gefunden_am" in jobs[0]
+        import re
+        assert re.match(r"^\d{4}-\d{2}-\d{2}$", jobs[0]["gefunden_am"])

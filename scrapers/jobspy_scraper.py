@@ -88,6 +88,7 @@ class JobSpyScraper:
                 "salary_max": row.get("max_amount"),
                 "date_posted": str(row.get("date_posted", "")),
                 "scraped_at": datetime.now().isoformat(),
+                "gefunden_am": datetime.now().strftime("%Y-%m-%d"),
                 "search_keyword": keyword,
                 "search_location": location,
                 "applied": False,
