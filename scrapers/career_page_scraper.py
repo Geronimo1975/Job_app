@@ -50,6 +50,15 @@ class CareerPageScraper:
         "analytics", "tools", "pipeline", "infrastructure",
     ]
 
+    # Extragere email de contact
+    EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+    # Prefixe preferate pentru un email de aplicare (în ordine)
+    PREFERRED_PREFIXES = (
+        "bewerbung", "karriere", "career", "jobs", "job", "recruiting",
+        "recruitment", "hr", "personal", "kontakt", "contact", "info",
+    )
+    _EMAIL_JUNK_SUFFIX = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+
     def __init__(self, config: dict, project_root: Path):
         self.config = config
         self.project_root = project_root
@@ -63,6 +72,53 @@ class CareerPageScraper:
         with open(studios_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data.get("studios", [])
+
+    def _extract_email(self, soup: "BeautifulSoup", url: str, headers: dict) -> str:
+        """Extrage un email de contact din pagină; dacă lipsește, încearcă Impressum."""
+        candidates = self._find_emails_in_soup(soup)
+
+        if not candidates:
+            impressum_url = self._find_impressum_link(soup, url)
+            if impressum_url:
+                try:
+                    resp = httpx.get(impressum_url, headers=headers, timeout=15, follow_redirects=True)
+                    resp.raise_for_status()
+                    candidates = self._find_emails_in_soup(BeautifulSoup(resp.text, "html.parser"))
+                except Exception:
+                    candidates = []
+
+        if not candidates:
+            return ""
+
+        for prefix in self.PREFERRED_PREFIXES:
+            for email in candidates:
+                if email.lower().split("@", 1)[0].startswith(prefix):
+                    return email
+        return candidates[0]
+
+    def _find_emails_in_soup(self, soup: "BeautifulSoup") -> list[str]:
+        """Caută adrese email în link-uri mailto: și în textul vizibil al paginii."""
+        found: list[str] = []
+        for a in soup.find_all("a", href=True):
+            if a["href"].lower().startswith("mailto:"):
+                addr = a["href"][7:].split("?", 1)[0].strip()
+                if addr and addr not in found:
+                    found.append(addr)
+        for match in self.EMAIL_RE.finditer(soup.get_text(" ")):
+            addr = match.group(0)
+            if addr.lower().endswith(self._EMAIL_JUNK_SUFFIX) or addr in found:
+                continue
+            found.append(addr)
+        return found
+
+    def _find_impressum_link(self, soup: "BeautifulSoup", base_url: str) -> str:
+        """Găsește link-ul spre pagina de Impressum, dacă există."""
+        from urllib.parse import urljoin
+        for a in soup.find_all("a", href=True):
+            text = a.get_text(strip=True).lower()
+            if "impressum" in text or "impressum" in a["href"].lower() or "imprint" in text:
+                return urljoin(base_url, a["href"])
+        return ""
 
     def scrape(self, studio_names: list[str] | None = None) -> list[dict]:
         """
@@ -116,6 +172,9 @@ class CareerPageScraper:
         soup = BeautifulSoup(response.text, "html.parser")
         jobs = []
 
+        # Email de contact: override din YAML, altfel extras din pagină/Impressum
+        email = studio.get("email_hr") or self._extract_email(soup, url, headers)
+
         # Caută link-uri care par a fi joburi
         for link in soup.find_all("a", href=True):
             href = link["href"]
@@ -143,7 +202,7 @@ class CareerPageScraper:
                     "location": studio.get("location", ""),
                     "url": href,
                     "description": "",
-                    "email_hr": studio.get("email_hr"),
+                    "email_hr": email,
                     "language": studio.get("language", "en"),
                     "scraped_at": datetime.now().isoformat(),
                     "applied": False,
