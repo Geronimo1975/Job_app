@@ -34,3 +34,6 @@ config/n8n_bewerbung_brevo_workflow.json
 
 # Claude Code (override-uri personale, nu se comit)
 .claude/settings.local.json
+
+# Dashboard local DB
+dashboard/db.sqlite3
