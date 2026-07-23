@@ -28,6 +28,7 @@ Utilizare:
 """
 
 import argparse
+import json
 import os
 import sys
 from datetime import datetime
@@ -41,7 +42,7 @@ from agents.base_agent import AgentResult, AgentStatus, load_config, setup_logge
 from agents.scraper_agent import ScraperAgent
 from agents.analyzer_agent import AnalyzerAgent
 from filters.relevance import passes_prefilter, prescore
-from store.seen import ANALIZAT, RESPINS_PREFILTRU, SeenIndex
+from store.seen import ANALIZAT, RESPINS_PREFILTRU, SeenIndex, company_title_key, url_key
 from agents.cover_letter_agent import CoverLetterAgent
 from agents.email_agent import EmailAgent
 from agents.document_agent import DocumentAgent
@@ -154,10 +155,15 @@ def apply_prefilter_gate(
     ruleze doar pe ce are șansă. Joburile respinse se memorează, altfel ar
     fi re-evaluate la fiecare rulare.
     """
-    stats = {"total": len(jobs), "deja_vazute": 0, "respinse": 0, "retinute": 0}
+    stats = {"total": len(jobs), "fara_cheie": 0, "deja_vazute": 0, "respinse": 0, "retinute": 0}
 
-    fresh = seen.filter_new(jobs)
-    stats["deja_vazute"] = len(jobs) - len(fresh)
+    # Joburile fără nicio cheie de identitate nu pot fi nici deduplicate,
+    # nici urmărite — le numărăm separat, nu ca „deja văzute".
+    keyed = [j for j in jobs if url_key(j) or company_title_key(j)]
+    stats["fara_cheie"] = len(jobs) - len(keyed)
+
+    fresh = seen.filter_new(keyed)
+    stats["deja_vazute"] = len(keyed) - len(fresh)
 
     kept = []
     for job in fresh:
@@ -211,8 +217,20 @@ def run_pipeline(args):
             seen = SeenIndex.load(PROJECT_ROOT / "data" / "seen_jobs.json")
             pipeline_jobs, gate_stats = apply_prefilter_gate(pipeline_jobs, config, seen)
             seen.save()
+
+            # Persistăm lotul care a trecut poarta: pasul `analyze` rulat
+            # separat citește ACEST fișier, nu jobs_scraped.json (brut) —
+            # altfel AI-ul ar analiza nefiltrat exact ce a respins poarta.
+            filtered_path = PROJECT_ROOT / "data" / "jobs_filtered.json"
+            filtered_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(filtered_path, "w", encoding="utf-8") as f:
+                json.dump(pipeline_jobs, f, indent=2, ensure_ascii=False, default=str)
+
+            fara_cheie_suffix = (
+                f" ({gate_stats['fara_cheie']} fără cheie)" if gate_stats["fara_cheie"] else ""
+            )
             print(
-                f"  Prefiltru: {gate_stats['total']} găsite → "
+                f"  Prefiltru: {gate_stats['total']} găsite{fara_cheie_suffix} → "
                 f"{gate_stats['deja_vazute']} deja văzute, "
                 f"{gate_stats['respinse']} sub prag → "
                 f"{gate_stats['retinute']} spre analiză"
@@ -230,9 +248,23 @@ def run_pipeline(args):
     # STEP 2: Analiză
     if args.step in ("analyze", "full"):
         print("\n🔍 STEP 2: Analiză & Match Score...")
+
+        # `--step analyze` standalone: preferăm lotul deja trecut prin poartă.
+        # Fără asta, AnalyzerAgent._load_jobs() ar citi jobs_scraped.json
+        # (brut, nefiltrat) și AI-ul ar plăti analiza pe ce a respins poarta.
+        # NU re-trecem joburile prin poartă aici: ar fi toate „deja văzute".
+        loaded_from_filtered = False
+        if not pipeline_jobs:
+            filtered_path = PROJECT_ROOT / "data" / "jobs_filtered.json"
+            if filtered_path.exists():
+                with open(filtered_path, "r", encoding="utf-8") as f:
+                    pipeline_jobs = json.load(f)
+                loaded_from_filtered = True
+                print(f"  📂 {len(pipeline_jobs)} joburi din lotul filtrat (jobs_filtered.json)")
+
         agent = AnalyzerAgent()
         result = agent.run(
-            jobs=pipeline_jobs if pipeline_jobs else None,
+            jobs=pipeline_jobs if (pipeline_jobs or loaded_from_filtered) else None,
             use_ai=args.use_ai,
             min_score=args.min_score,
         )
