@@ -1,43 +1,24 @@
-"""Views dashboard: index, add (PRG), detail+edit, push/send în Sheet, refresh."""
-import hashlib
-import json
+"""Views dashboard: index, add (PRG), detail+edit, Execută/Preview/Transmite, Sheet."""
+from pathlib import Path
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .extractor import extract_job
 from .forms import JobForm
+from .generation_bridge import (already_sent_in_sheet, generate_package,
+                                regenerate_pdfs, send_package)
 from .models import Job
-from .sheet_bridge import poll_mode, preview_sheet_row, push_to_sheet, refresh_states
-
-
-def _send_blockers(job) -> list[str]:
-    """Motive pentru care SENDEN nu are voie să plece pentru acest job."""
-    blockers = []
-    if job.send_state != "draft":
-        blockers.append(
-            f"Starea trimiterii e „{job.send_state}”, nu „draft” — un SENDEN nou ar rămâne "
-            "armat în Sheet fără să fie consumat. Resetează întâi starea din pagina jobului."
-        )
-    if not (job.email_hr or "").strip():
-        blockers.append(
-            "Jobul nu are Kontakt Email — poll-ul n-ar avea destinatar, iar comanda "
-            "ar rămâne blocată în pending la nesfârșit."
-        )
-    return blockers
-
-
-def _row_hash(row: dict) -> str:
-    """Amprenta rândului aprobat pe pagina de confirmare (GET) — verificată la POST."""
-    payload = json.dumps(row, sort_keys=True, ensure_ascii=False, default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+from .sheet_bridge import mark_sent_in_sheet, push_to_sheet
 
 
 def index(request):
-    return render(request, "jobs/index.html", {"jobs": Job.objects.all()})
+    return render(request, "jobs/index.html",
+                  {"jobs": Job.objects.all(), "section": "jobs"})
 
 
 def add_job(request):
@@ -90,18 +71,8 @@ def job_detail(request, pk):
 
 def delete_job(request, pk):
     if request.method == "POST":
-        job = Job.objects.filter(pk=pk).first()
-        if job and job.send_state == "senden_pushed":
-            # Ștergerea locală NU dezarmează SENDEN din Sheet — emailul ar
-            # pleca oricum, fără nicio urmă locală.
-            messages.error(
-                request,
-                "Rândul are SENDEN armat în Sheet — ștergerea locală NU anulează trimiterea. "
-                "Golește întâi col P „Sende Befehl” în Sheet (sau așteaptă poll-ul), apoi șterge.",
-            )
-            return redirect("index")
         Job.objects.filter(pk=pk).delete()
-        messages.info(request, "Rând șters.")
+        messages.info(request, "Rând șters (doar local — Sheet-ul rămâne).")
     return redirect("index")
 
 
@@ -124,7 +95,7 @@ def push_job(request, pk):
     if request.method != "POST":
         return redirect("job_detail", pk=pk)
     job = get_object_or_404(Job, pk=pk)
-    res = push_to_sheet(job, senden=False)
+    res = push_to_sheet(job)
     if res["ok"]:
         messages.success(request, "Rând salvat în Sheet (upsert pe Apply URL).")
     else:
@@ -132,56 +103,128 @@ def push_job(request, pk):
     return redirect("job_detail", pk=pk)
 
 
-def send_job(request, pk):
-    """„Trimite (SENDEN)" — GET: confirmare cu rândul exact; POST: push cu col P=SENDEN."""
+def execute_job(request, pk):
+    """„Execută" — generează pachetul (email + Anschreiben + PDF-uri). Sincron, ~10-30s."""
+    if request.method != "POST":
+        return redirect("index")
+    job = get_object_or_404(Job, pk=pk)
+    if job.send_state == "sent":
+        messages.error(request, "Jobul e deja trimis — nu regenerez peste un pachet trimis.")
+        return redirect("index")
+    res = generate_package(job)
+    if res["ok"]:
+        job.email_subject = res["email_subject"]
+        job.email_body = res["email_body"]
+        job.anschreiben_text = res["anschreiben_text"]
+        job.anschreiben_pdf_path = res["anschreiben_pdf_path"]
+        job.bewerbung_pdf_path = res["bewerbung_pdf_path"]
+        job.attachments_json = res["attachments"]
+        job.send_state = "generated"
+        job.generated_at = timezone.now()
+        job.send_error = ""
+        job.save()
+        messages.success(request, "Pachet generat — verifică-l în Preview înainte de transmitere.")
+        return redirect("preview_job", pk=pk)
+    job.send_state = "error"
+    job.send_error = res["error"]
+    job.save(update_fields=["send_state", "send_error"])
+    messages.error(request, f"Generare eșuată: {res['error']}")
+    return redirect("index")
+
+
+def _attachment_entries(job) -> list[dict]:
+    """Atașamentele jobului, cu indexul pentru serve_attachment + starea pe disc."""
+    return [
+        {"idx": i, "name": Path(p).name, "exists": Path(p).exists()}
+        for i, p in enumerate(job.attachments_json or [])
+    ]
+
+
+def preview_job(request, pk):
+    """Preview editabil: email (subiect+body) și Anschreiben; PDF-urile se refac la salvare."""
     job = get_object_or_404(Job, pk=pk)
     if request.method == "POST":
-        blockers = _send_blockers(job)
-        if blockers:
-            for b in blockers:
-                messages.error(request, b)
-            return redirect("job_detail", pk=pk)
-        row = preview_sheet_row(job)
-        if request.POST.get("row_hash", "") != _row_hash(row):
-            # Rândul s-a schimbat între confirmarea văzută și POST — reafișăm
-            messages.warning(
-                request, "Rândul s-a schimbat față de ce ai aprobat — reverifică și confirmă din nou."
-            )
-            return redirect("send_job", pk=pk)
-        res = push_to_sheet(job, senden=True)
-        if res["ok"]:
-            job.send_state = "senden_pushed"
-            job.seen_in_pending = False
-            job.sheet_pushed_at = timezone.now()
-            job.save(update_fields=["send_state", "seen_in_pending", "sheet_pushed_at"])
-            messages.success(
-                request,
-                "SENDEN scris în Sheet — poll-ul trimite emailul la următorul tick.",
-            )
-            return redirect("index")
-        messages.error(
-            request,
-            f"Trimitere eșuată: {res['error']} — dacă e o eroare de transport, comanda "
-            "POATE fi ajuns totuși în Sheet: verifică col P „Sende Befehl” înainte de a reîncerca.",
-        )
-        return redirect("job_detail", pk=pk)
-    row = preview_sheet_row(job)
-    return render(request, "jobs/send_confirm.html", {
-        "job": job,
-        "row": row,
-        "row_hash": _row_hash(row),
-        "mode": poll_mode(),
-        "blockers": _send_blockers(job),
+        job.email_subject = request.POST.get("email_subject", job.email_subject)
+        job.email_body = request.POST.get("email_body", job.email_body)
+        new_text = request.POST.get("anschreiben_text", job.anschreiben_text)
+        text_changed = new_text != job.anschreiben_text
+        job.anschreiben_text = new_text
+        job.save(update_fields=["email_subject", "email_body", "anschreiben_text"])
+        if text_changed and job.anschreiben_pdf_path:
+            res = regenerate_pdfs(job)
+            if res["ok"]:
+                messages.success(request, "Editări salvate; PDF-urile refăcute din textul editat.")
+            else:
+                messages.warning(request, f"Editări salvate, dar PDF-ul NU s-a refăcut: {res['error']}")
+        else:
+            messages.success(request, "Editări salvate.")
+        return redirect("preview_job", pk=pk)
+    return render(request, "jobs/preview.html", {
+        "job": job, "attachments": _attachment_entries(job), "section": "jobs",
     })
 
 
-def refresh_states_view(request):
-    """Actualizează stările din pending (deducție: absent = procesat de poll)."""
+def transmit_job(request, pk):
+    """Confirmare + trimitere: dry-run implicit, LIVE doar cu comutatorul bifat."""
+    job = get_object_or_404(Job, pk=pk)
     if request.method == "POST":
-        try:
-            changed = refresh_states(Job.objects.all())
-            messages.info(request, f"Stări actualizate: {changed} rând(uri) și-au schimbat starea.")
-        except Exception as e:
-            # Orice excepție → mesaj pe pagină, nu 500 („nimic silențios")
-            messages.error(request, f"Refresh eșuat: {e}")
-    return redirect("index")
+        if job.send_state != "generated":
+            messages.error(request, f"Starea e „{job.send_state}” — doar pachetele „generated” se transmit.")
+            return redirect("index")
+        if not (job.email_hr or "").strip():
+            messages.error(request, "Fără Kontakt Email — completează-l întâi în pagina jobului.")
+            return redirect("job_detail", pk=pk)
+        live = request.POST.get("live") == "on"
+        if live and already_sent_in_sheet(job) == "da":
+            messages.error(request, "Sheet-ul arată jobul DEJA trimis (done/sent/GESENDET) — LIVE blocat.")
+            return redirect("transmit_job", pk=pk)
+        res = send_package(job, live=live)
+        if res["ok"] and live:
+            job.send_state = "sent"
+            job.sent_at = timezone.now()
+            job.send_error = ""
+            job.save(update_fields=["send_state", "sent_at", "send_error"])
+            mark = mark_sent_in_sheet(job)
+            if mark["ok"]:
+                messages.success(request, "Email TRIMIS + Sheet marcat GESENDET.")
+            else:
+                messages.warning(request, f"Email TRIMIS, dar Sheet-ul NU s-a marcat ({mark['error']}) "
+                                          "— completează manual col R „Email Status”=GESENDET.")
+            return redirect("sent_list")
+        if res["ok"]:
+            messages.info(request, "Dry-run OK — nimic nu a fost trimis. Bifează LIVE când ești gata.")
+            return redirect("transmit_job", pk=pk)
+        job.send_state = "error"
+        job.send_error = res["error"]
+        job.save(update_fields=["send_state", "send_error"])
+        messages.error(request, f"Trimitere eșuată: {res['error']}")
+        return redirect("index")
+    return render(request, "jobs/transmit_confirm.html", {
+        "job": job, "attachments": _attachment_entries(job),
+        "sheet_verdict": already_sent_in_sheet(job), "section": "jobs",
+    })
+
+
+def serve_doc(request, pk, kind):
+    """Servește DOAR PDF-urile jobului (căi stocate pe rând, nu căi libere)."""
+    job = get_object_or_404(Job, pk=pk)
+    path = {"anschreiben": job.anschreiben_pdf_path,
+            "bewerbung": job.bewerbung_pdf_path}.get(kind, "")
+    if not path or not Path(path).exists():
+        raise Http404
+    return FileResponse(open(path, "rb"), content_type="application/pdf")
+
+
+def serve_attachment(request, pk, idx):
+    job = get_object_or_404(Job, pk=pk)
+    paths = job.attachments_json or []
+    if not (0 <= idx < len(paths)) or not Path(paths[idx]).exists():
+        raise Http404
+    return FileResponse(open(paths[idx], "rb"))
+
+
+def sent_list(request):
+    """Secțiunea „Trimise" din meniul lateral."""
+    return render(request, "jobs/sent.html", {
+        "jobs": Job.objects.filter(send_state="sent"), "section": "sent",
+    })

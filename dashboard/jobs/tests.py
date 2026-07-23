@@ -441,7 +441,7 @@ class GenerationBridgeTests(TestCase):
         self.assertIn("refuzat", res["error"])
 
     @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s"})
-    @patch("jobs.generation_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.N8nClient")  # clientul se construiește în _client_or_error
     @patch("jobs.generation_bridge.load_pipeline_config",
            return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
     def test_already_sent_checks_known_urls(self, _cfg, mock_client):

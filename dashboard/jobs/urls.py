@@ -8,7 +8,10 @@ urlpatterns = [
     path("job/<int:pk>/", views.job_detail, name="job_detail"),
     path("job/<int:pk>/delete", views.delete_job, name="delete_job"),
     path("job/<int:pk>/push", views.push_job, name="push_job"),
-    path("job/<int:pk>/send", views.send_job, name="send_job"),
-    path("job/<int:pk>/reset", views.reset_job, name="reset_job"),
-    path("refresh", views.refresh_states_view, name="refresh_states"),
+    path("job/<int:pk>/execute", views.execute_job, name="execute_job"),
+    path("job/<int:pk>/preview", views.preview_job, name="preview_job"),
+    path("job/<int:pk>/transmit", views.transmit_job, name="transmit_job"),
+    path("job/<int:pk>/doc/<str:kind>", views.serve_doc, name="serve_doc"),
+    path("job/<int:pk>/att/<int:idx>", views.serve_attachment, name="serve_attachment"),
+    path("trimise/", views.sent_list, name="sent_list"),
 ]
