@@ -3,6 +3,7 @@ import os
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
 from jobs import extractor
 from jobs.models import Job
@@ -113,3 +114,47 @@ class ExtractorTests(SimpleTestCase):
         result = extractor.extract_job("https://acme.de/jobs/3")
         self.assertEqual(result["extraction_status"], "error")
         self.assertIn("ANTHROPIC_API_KEY", result["raw_json"]["error"])
+
+
+def _ok_extraction(url):
+    return {
+        "url": url, "title": "Python Dev", "company": "ACME", "location": "Berlin",
+        "description": "desc", "email_hr": "jobs@acme.de", "salary_min": 60000,
+        "salary_max": 80000, "language": "en", "date_posted": "2026-07-01",
+        "source": "dashboard", "extraction_status": "ok", "raw_json": {},
+    }
+
+
+class ViewTests(TestCase):
+    @patch("jobs.views.extract_job")
+    def test_add_job_creates_row_and_redirects(self, mock_extract):
+        url = "https://acme.de/jobs/1"
+        mock_extract.return_value = _ok_extraction(url)
+        resp = self.client.post(reverse("add_job"), {"url": url})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Job.objects.count(), 1)
+        self.assertEqual(Job.objects.get().title, "Python Dev")
+
+    @patch("jobs.views.extract_job")
+    def test_duplicate_url_updates_not_duplicates(self, mock_extract):
+        url = "https://acme.de/jobs/1"
+        mock_extract.return_value = _ok_extraction(url)
+        self.client.post(reverse("add_job"), {"url": url})
+        updated = _ok_extraction(url)
+        updated["title"] = "Senior Python Dev"
+        mock_extract.return_value = updated
+        self.client.post(reverse("add_job"), {"url": url})
+        self.assertEqual(Job.objects.count(), 1)
+        self.assertEqual(Job.objects.get().title, "Senior Python Dev")
+
+    def test_invalid_url_rejected(self):
+        # fără follow: nu randăm index.html (nu există până la Task 5)
+        resp = self.client.post(reverse("add_job"), {"url": "not-a-url"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Job.objects.count(), 0)
+
+    def test_delete_job(self):
+        job = Job.objects.create(url="https://a.co/1", title="Alpha")
+        resp = self.client.post(reverse("delete_job", args=[job.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Job.objects.count(), 0)
