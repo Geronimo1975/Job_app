@@ -18,6 +18,13 @@ _W_PRIMARY_DESC = 8
 _W_SECONDARY_TITLE = 8
 _W_SECONDARY_DESC = 3
 
+# Bonus pentru un keyword de căutare al pieței găsit în titlu: jobul e exact
+# ce am căutat, nu doar unul care menționează un skill în treacăt.
+_W_MARKET_KEYWORD = 15
+# Bonusul total de keyword e plafonat: două keyword-uri potrivite ajung ca
+# semnal; mai multe nu fac jobul mai relevant.
+_MAX_KEYWORD_BONUS = 30
+
 
 def skill_tokens(skill: str) -> list[str]:
     """Sparge un skill din config în termeni căutabili.
@@ -37,6 +44,22 @@ def _contains(text: str, token: str) -> bool:
 
 def _matches(text: str, skill: str) -> bool:
     return any(_contains(text, tok) for tok in skill_tokens(skill))
+
+
+def _market_keywords(job: dict, config: dict) -> list[str]:
+    """Keyword-urile de căutare relevante pentru piața jobului.
+
+    Joburile fără câmp `market` (ex. career pages, scraper pre-piețe) primesc
+    reuniunea keyword-urilor din toate piețele.
+    """
+    markets_cfg = (config.get("scraping", {}) or {}).get("markets", {}) or {}
+    market_key = job.get("market")
+    if market_key in markets_cfg:
+        groups = markets_cfg[market_key].get("keyword_groups", []) or []
+    else:
+        groups = [g for m in markets_cfg.values()
+                  for g in (m.get("keyword_groups", []) or [])]
+    return [kw for group in groups for kw in group]
 
 
 def prescore(job: dict, config: dict) -> tuple[int, list[str]]:
@@ -80,6 +103,17 @@ def prescore(job: dict, config: dict) -> tuple[int, list[str]]:
         elif _matches(text_l, skill):
             score += _W_SECONDARY_DESC
             reasons.append(skill)
+
+    # ── Bonus keyword de piață (spec §5.3) ─────────────────────
+    # Un titlu care conține chiar interogarea căutată („AI Engineer") e
+    # semnalul cel mai puternic — fără bonus, astfel de joburi cădeau sub
+    # prag dacă titlul nu repeta și un skill primar (ex. „Python").
+    keyword_bonus = 0
+    for keyword in _market_keywords(job, config):
+        if _contains(title_l, keyword.lower()):
+            keyword_bonus += _W_MARKET_KEYWORD
+            reasons.append(f"cautare: {keyword}")
+    score += min(keyword_bonus, _MAX_KEYWORD_BONUS)
 
     return min(score, 100), reasons
 

@@ -127,3 +127,56 @@ class TestThreshold:
         score, _ = prescore(_job("Python Developer"), {"skills": {"primary": ["Python"]}})
         assert score > 0
         assert passes_prefilter(_job("Python Developer"), {"skills": {"primary": ["Python"]}}) is True
+
+
+CFG_MARKETS = {
+    "skills": {"primary": ["Python", "Django", "AI/ML"], "secondary": ["Docker"]},
+    "scraping": {
+        "filters": {"exclude_keywords": ["Director"], "min_prescore": 40},
+        "markets": {
+            "de": {"keyword_groups": [["Python Developer", "Backend Engineer"],
+                                       ["AI Engineer", "Machine Learning Engineer"]]},
+            "ro_remote": {"keyword_groups": [["Django Developer"]]},
+        },
+    },
+}
+
+
+class TestMarketKeywordBonus:
+    def test_search_keyword_in_title_passes_threshold(self):
+        """„AI Engineer (m/w/d)" e chiar interogarea căutată — trebuie să treacă
+        pragul chiar dacă titlul nu conține un skill primar ca „Python"."""
+        job = _job("AI Engineer (m/w/d)", "Wir nutzen Python und Docker.", market="de")
+        score, reasons = prescore(job, CFG_MARKETS)
+        assert score >= 40
+        assert any("AI Engineer" in r for r in reasons)
+
+    def test_keyword_bonus_is_capped(self):
+        """Trei keyword-uri potrivite nu dau mai mult bonus decât plafonul."""
+        job = _job("Python Developer / Backend Engineer / AI Engineer", "", market="de")
+        with_cap, _ = prescore(job, CFG_MARKETS)
+        # scorul fără plafon ar fi cu 15 mai mare (3×15=45 > plafon 30)
+        assert with_cap <= 100
+        # verificare directă a plafonului: bonusul efectiv e exact 30, nu 45.
+        # titlul conține „Python" (primar, +20) și „ai" ca token separat din
+        # skill-ul primar „AI/ML" (via „AI Engineer", +20) → 20+20+30 = 70
+        assert with_cap == 70
+
+    def test_job_without_market_uses_all_markets(self):
+        """Career pages (fără câmp market): reuniunea keyword-urilor."""
+        job = _job("Django Developer", "")  # doar în ro_remote
+        score, reasons = prescore(job, CFG_MARKETS)
+        assert any("Django Developer" in r for r in reasons)
+
+    def test_no_keyword_no_bonus(self):
+        job = _job("Truck Driver", "", market="de")
+        score, reasons = prescore(job, CFG_MARKETS)
+        assert score == 0
+        assert not any(r.startswith("cautare:") for r in reasons)
+
+    def test_keyword_matches_as_phrase_with_boundaries(self):
+        """„AI Engineer" se potrivește în „Senior AI Engineer", nu fragmentat."""
+        score_senior, _ = prescore(_job("Senior AI Engineer", "", market="de"), CFG_MARKETS)
+        score_split, reasons_split = prescore(_job("AI Systems / Test Engineer", "", market="de"), CFG_MARKETS)
+        assert score_senior >= 15
+        assert not any("AI Engineer" in r for r in reasons_split if r.startswith("cautare:"))
