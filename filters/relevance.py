@@ -56,8 +56,10 @@ def prescore(job: dict, config: dict) -> tuple[int, list[str]]:
     # ── Excludere dură: doar pe titlu ───────────────────────────
     # Pe descriere ar respinge joburi bune care doar menționează
     # „berichtest an den Director".
+    # Potrivire pe cuvânt întreg, la fel ca la skill-uri: cu `in` simplu,
+    # keyword-ul „VP" respingea „MVP Launch Engineer".
     for excluded in filters.get("exclude_keywords", []) or []:
-        if excluded.lower() in title_l:
+        if _contains(title_l, excluded.lower()):
             return HARD_REJECT, [f"exclus: {excluded}"]
 
     score = 0

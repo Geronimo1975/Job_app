@@ -61,6 +61,17 @@ class TestHardReject:
     def test_rejected_job_does_not_pass(self):
         assert passes_prefilter(_job("VP Engineering"), CFG) is False
 
+    def test_exclusion_matches_whole_words_only(self):
+        """„VP" nu trebuie să respingă „MVP"."""
+        score, _ = prescore(_job("MVP Launch Engineer (Python)"), CFG)
+        assert score > 0
+
+    def test_multiword_exclusion_still_rejects(self):
+        """Reparația nu trebuie să strice keyword-urile din mai multe cuvinte."""
+        score, reasons = prescore(_job("Head of Data Platform"), CFG)
+        assert score == HARD_REJECT
+        assert any("Head of" in r for r in reasons)
+
 
 class TestScoring:
     def test_primary_skill_in_title_scores_high(self):
@@ -80,14 +91,18 @@ class TestScoring:
         assert secondary < primary
 
     def test_score_is_capped_at_100(self):
+        """Șase skill-uri primare în titlu ar da 120 brut — se plafonează la 100."""
+        cfg = {
+            "skills": {
+                "primary": ["Python", "Django", "Java", "Rust", "Kotlin", "Scala"],
+                "secondary": [],
+            },
+            "scraping": {"filters": {"exclude_keywords": [], "min_prescore": 0}},
+        }
         score, _ = prescore(
-            _job(
-                "Python Django AI ML Developer",
-                "Python Django Docker PostgreSQL AI ML",
-            ),
-            CFG,
+            _job("Python Django Java Rust Kotlin Scala Developer"), cfg
         )
-        assert score <= 100
+        assert score == 100
 
     def test_word_boundary_prevents_false_match(self):
         """„ml" nu trebuie să se potrivească în interiorul lui „html"."""
