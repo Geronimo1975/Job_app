@@ -1,0 +1,122 @@
+{
+  "name": "JobApp Urls",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jobapp-urls",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ko0T1HawgzBeFN0s",
+          "name": "JobApp Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bewerbungen"
+        },
+        "options": {
+          "range": "Bewerbungen!A1:AB"
+        },
+        "authentication": "serviceAccount"
+      },
+      "name": "Read Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "D1jIVLCWwpVV1Y3U",
+          "name": "JobApp Service Account (get-hub)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Întoarce DOAR cele 3 coloane de care are nevoie indexul de dedupe.\n// Tab-ul „Bewerbungen\" are ~1140 coloane fantomă (col_29…col_1167);\n// fără proiecție, fiecare apel ar transfera 1086 × 1168 celule.\nconst rows = items.map(item => ({\n  \"Apply URL\": item.json[\"Apply URL\"] || \"\",\n  \"Status\": item.json[\"Status\"] || \"\",\n  \"Email Status\": item.json[\"Email Status\"] || \"\",\n})).filter(r => r[\"Apply URL\"]);\n\nreturn [{ json: { rows } }];\n"
+      },
+      "name": "Project Urls",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sheet": {
+      "main": [
+        [
+          {
+            "node": "Project Urls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Urls": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

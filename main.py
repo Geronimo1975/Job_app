@@ -48,6 +48,7 @@ from agents.email_agent import EmailAgent
 from agents.document_agent import DocumentAgent
 from agents.tracker_agent import TrackerAgent
 from agents.n8n_sync_agent import N8nSyncAgent
+from sender.n8n_client import N8nClient
 from sender.n8n_mapping import sheet_row_to_job
 
 
@@ -215,6 +216,15 @@ def run_pipeline(args):
             # Poarta ieftină: dedupe cu memorie + prefiltru local, ca analiza
             # AI să ruleze doar pe joburile cu șansă reală.
             seen = SeenIndex.load(PROJECT_ROOT / "data" / "seen_jobs.json")
+            # Seed din Sheet: joburile deja aplicate nu trebuie redescoperite.
+            # Sheet-ul e sursa de adevăr; indexul local e doar o oglindă.
+            try:
+                added = seen.seed_urls(N8nClient(config).get_known_urls())
+                if added:
+                    print(f"  Index: +{added} URL-uri din Sheet")
+            except Exception as e:
+                print(f"  ⚠ Seed din Sheet eșuat (continuăm cu indexul local): {e}")
+
             pipeline_jobs, gate_stats = apply_prefilter_gate(pipeline_jobs, config, seen)
             seen.save()
 

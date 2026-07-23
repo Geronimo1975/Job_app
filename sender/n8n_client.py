@@ -71,6 +71,30 @@ class N8nClient:
         data = self._post("pending", {"action": "get_pending"})
         return data.get("commands", [])
 
+    def get_known_urls(self) -> list[str]:
+        """URL-urile rândurilor deja procesate din Sheet.
+
+        Alimentează indexul de dedupe, ca un job la care s-a aplicat deja să
+        nu reapară ca nou. `JobApp Pending` nu ajută aici: întoarce doar
+        rândurile cu `SENDEN`.
+
+        Există două forme de „trimis", pentru că le scriu două sisteme:
+        `sent` (Apps Script → FastAPI) și `GESENDET` (`--step poll`).
+        """
+        if not self.enabled:
+            return []
+        data = self._post("urls", {"action": "get_urls"})
+        urls = []
+        for row in data.get("rows", []) or []:
+            url = str(row.get("Apply URL", "") or "").strip()
+            if not url:
+                continue
+            status = str(row.get("Status", "") or "").strip().lower()
+            email_status = str(row.get("Email Status", "") or "").strip().lower()
+            if status == "done" or email_status in ("sent", "gesendet"):
+                urls.append(url)
+        return urls
+
     def upload_doc(self, pdf_path: str | Path, row: int, apply_url: str = "") -> dict:
         """Urcă un PDF la n8n → Google Drive; n8n scrie linkul în col O „Anschreiben PDF".
 

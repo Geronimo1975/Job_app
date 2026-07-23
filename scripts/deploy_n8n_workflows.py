@@ -15,7 +15,7 @@ import httpx
 
 ROOT = Path(__file__).parent.parent.resolve()
 BASE = "https://app.n8n-studio.com/api/v1"
-WORKFLOWS = ["jobapp_ingest.json", "jobapp_pending.json", "jobapp_upload.json", "jobapp_trigger.json"]
+WORKFLOWS = ["jobapp_ingest.json", "jobapp_pending.json", "jobapp_upload.json", "jobapp_trigger.json", "jobapp_urls.json"]
 
 
 def _api_key() -> str:

@@ -105,3 +105,50 @@ def test_upload_doc_disabled_is_noop(monkeypatch, tmp_path):
     with patch("sender.n8n_client.httpx.post") as p:
         assert client.upload_doc(f, row=1)["skipped"] is True
     p.assert_not_called()
+
+
+class TestGetKnownUrls:
+    """Alimentarea indexului de dedupe din Sheet."""
+
+    def _client(self, enabled=True):
+        from sender.n8n_client import N8nClient
+        return N8nClient({
+            "n8n": {
+                "enabled": enabled,
+                "base_url": "https://n8n.test",
+                "paths": {"urls": "/webhook/jobapp-urls"},
+                "timeout_sec": 5,
+            }
+        })
+
+    def test_disabled_client_returns_empty(self):
+        assert self._client(enabled=False).get_known_urls() == []
+
+    def test_returns_urls_of_processed_rows(self):
+        from unittest.mock import patch
+        rows = [
+            {"Apply URL": "https://a.com/1", "Status": "done", "Email Status": ""},
+            {"Apply URL": "https://a.com/2", "Status": "", "Email Status": "GESENDET"},
+            {"Apply URL": "https://a.com/3", "Status": "", "Email Status": "sent"},
+        ]
+        with patch.object(type(self._client()), "_post", return_value={"rows": rows}):
+            urls = self._client().get_known_urls()
+        assert urls == ["https://a.com/1", "https://a.com/2", "https://a.com/3"]
+
+    def test_skips_unprocessed_rows(self):
+        """Un rând doar găsit, neaplicat, nu blochează re-descoperirea."""
+        from unittest.mock import patch
+        rows = [{"Apply URL": "https://a.com/9", "Status": "", "Email Status": ""}]
+        with patch.object(type(self._client()), "_post", return_value={"rows": rows}):
+            assert self._client().get_known_urls() == []
+
+    def test_skips_rows_without_url(self):
+        from unittest.mock import patch
+        rows = [{"Apply URL": "", "Status": "done", "Email Status": ""}]
+        with patch.object(type(self._client()), "_post", return_value={"rows": rows}):
+            assert self._client().get_known_urls() == []
+
+    def test_empty_response_is_safe(self):
+        from unittest.mock import patch
+        with patch.object(type(self._client()), "_post", return_value={}):
+            assert self._client().get_known_urls() == []
