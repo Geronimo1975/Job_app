@@ -122,6 +122,17 @@ class TestHardReject:
         score, _ = prescore(_job("vp of python engineering"), CFG)
         assert score == HARD_REJECT
 
+    def test_exclusion_matches_whole_words_only(self):
+        """„VP" nu trebuie să respingă „MVP"."""
+        score, _ = prescore(_job("MVP Launch Engineer (Python)"), CFG)
+        assert score > 0
+
+    def test_multiword_exclusion_still_rejects(self):
+        """Potrivirea pe cuvânt întreg nu strică keyword-urile din mai multe cuvinte."""
+        score, reasons = prescore(_job("Head of Data Platform"), CFG)
+        assert score == HARD_REJECT
+        assert any("Head of" in r for r in reasons)
+
     def test_exclusion_only_on_title_not_description(self):
         """Un job normal care menționează „Director" în text nu se respinge."""
         score, _ = prescore(
@@ -151,14 +162,18 @@ class TestScoring:
         assert secondary < primary
 
     def test_score_is_capped_at_100(self):
+        """Șase skill-uri primare în titlu ar da 120 brut — se plafonează la 100."""
+        cfg = {
+            "skills": {
+                "primary": ["Python", "Django", "Java", "Rust", "Kotlin", "Scala"],
+                "secondary": [],
+            },
+            "scraping": {"filters": {"exclude_keywords": [], "min_prescore": 0}},
+        }
         score, _ = prescore(
-            _job(
-                "Python Django AI ML Developer",
-                "Python Django Docker PostgreSQL AI ML",
-            ),
-            CFG,
+            _job("Python Django Java Rust Kotlin Scala Developer"), cfg
         )
-        assert score <= 100
+        assert score == 100
 
     def test_word_boundary_prevents_false_match(self):
         """„ml" nu trebuie să se potrivească în interiorul lui „html"."""
@@ -256,8 +271,10 @@ def prescore(job: dict, config: dict) -> tuple[int, list[str]]:
     # ── Excludere dură: doar pe titlu ───────────────────────────
     # Pe descriere ar respinge joburi bune care doar menționează
     # „berichtest an den Director".
+    # Potrivire pe cuvânt întreg, la fel ca la skill-uri: cu `in` simplu,
+    # keyword-ul „VP" respingea „MVP Launch Engineer".
     for excluded in filters.get("exclude_keywords", []) or []:
-        if excluded.lower() in title_l:
+        if _contains(title_l, excluded.lower()):
             return HARD_REJECT, [f"exclus: {excluded}"]
 
     score = 0
