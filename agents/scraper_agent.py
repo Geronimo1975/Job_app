@@ -1,112 +1,112 @@
 """
-Scraper Agent — Coordonează scraping-ul de joburi din multiple surse.
+Scraper Agent — orchestrează scraping-ul pe piețe și surse.
 
 Responsabilități:
-  1. Rulează JobSpy scraper pentru platforme (Indeed, Glassdoor, Google)
-  2. Rulează Career Page scraper pentru studiouri de jocuri
-  3. Consolidează rezultatele și elimină duplicatele
-  4. Salvează în data/jobs_scraped.json
+  1. Citește piețele din config și rulează sursele declarate de fiecare
+  2. Izolează erorile: o sursă căzută nu doboară runul
+  3. Raportează un status onest (SUCCESS / PARTIAL / FAILED)
+  4. Salvează rezultatele rulării în data/jobs_scraped.json
 """
 
-from datetime import datetime
-from pathlib import Path
-
-from agents.base_agent import BaseAgent, AgentResult, AgentStatus
-from scrapers.jobspy_scraper import JobSpyScraper
+from agents.base_agent import AgentResult, AgentStatus, BaseAgent
+from scrapers.base import Market, save_jobs
 from scrapers.career_page_scraper import CareerPageScraper
+from scrapers.jobspy_scraper import JobSpyScraper
+from scrapers.remote_boards import RemoteBoardsScraper
+from scrapers.ro_boards import RoBoardsScraper
 
 
 class ScraperAgent(BaseAgent):
-    """Agent pentru scraping joburi din multiple surse."""
+    """Agent pentru scraping joburi pe mai multe piețe."""
 
     def __init__(self):
         super().__init__("ScraperAgent")
         self.jobspy = JobSpyScraper(self.config, self.project_root)
+        self.remote_boards = RemoteBoardsScraper(self.config, self.project_root)
+        self.ro_boards = RoBoardsScraper(self.config, self.project_root)
         self.career = CareerPageScraper(self.config, self.project_root)
 
     def run(
         self,
+        markets: list[str] | None = None,
         sources: list[str] | None = None,
-        keywords: list[str] | None = None,
-        locations: list[str] | None = None,
-        studio_names: list[str] | None = None,
         **kwargs,
     ) -> AgentResult:
-        """
-        Rulează scraping pe sursele specificate.
+        """Rulează scraping pe piețele cerute.
 
         Args:
-            sources: Lista de surse ["jobspy", "career_pages"]
-            keywords: Override keywords de căutare
-            locations: Override locații
-            studio_names: Studiouri specifice de scraped
+            markets: Chei de piață (implicit: toate din config)
+            sources: Restrânge sursele (implicit: cele declarate de fiecare piață)
         """
-        start = self._start()
+        self._start()
         result = AgentResult(agent_name=self.name, status=AgentStatus.RUNNING)
 
-        # Determină sursele active
-        scrape_cfg = self.config.get("scraping", {}).get("sources", {})
-        if sources is None:
-            sources = []
-            if scrape_cfg.get("jobspy", True):
-                sources.append("jobspy")
-            if scrape_cfg.get("career_pages", True):
-                sources.append("career_pages")
+        all_markets = Market.from_config(self.config)
+        if markets is not None:
+            all_markets = [m for m in all_markets if m.key in markets]
 
-        all_jobs = []
+        all_jobs: list[dict] = []
+        # Erori care contează pentru status (exclude sursele best-effort).
+        blocking_errors: list[str] = []
 
-        # ── JobSpy ──────────────────────────────────────────
-        if "jobspy" in sources:
-            self.logger.info("Scraping JobSpy (Indeed, Glassdoor, Google)...")
-            try:
-                jobs = self.jobspy.scrape(
-                    keywords=keywords,
-                    locations=locations,
-                )
-                self.logger.info(f"  JobSpy: {len(jobs)} joburi găsite")
+        for market in all_markets:
+            active = [s for s in market.sources if sources is None or s in sources]
+            self.logger.info(f"Piața „{market.key}“ — surse: {', '.join(active) or 'niciuna'}")
+
+            for source in active:
+                jobs, errors = self._run_source(source, market)
                 all_jobs.extend(jobs)
-                path = self.jobspy.save_results(jobs)
-                self.logger.info(f"  Salvat: {path}")
-            except ImportError as e:
-                self.logger.warning(f"  JobSpy skip: {e}")
-                result.errors.append(f"JobSpy: {e}")
-            except Exception as e:
-                self.logger.error(f"  JobSpy error: {e}")
-                result.errors.append(f"JobSpy: {e}")
+                result.errors.extend(errors)
+                if source not in market.best_effort_sources:
+                    blocking_errors.extend(errors)
+                self.logger.info(f"  {source}: {len(jobs)} joburi, {len(errors)} erori")
 
-        # ── Career Pages ────────────────────────────────────
-        if "career_pages" in sources:
-            self.logger.info("Scraping career pages ale studiourilor...")
-            try:
-                jobs = self.career.scrape(studio_names=studio_names)
-                self.logger.info(f"  Career Pages: {len(jobs)} joburi găsite")
-                all_jobs.extend(jobs)
-                path = self.career.save_results(jobs)
-                self.logger.info(f"  Salvat: {path}")
-            except ImportError as e:
-                self.logger.warning(f"  Career Pages skip: {e}")
-                result.errors.append(f"Career Pages: {e}")
-            except Exception as e:
-                self.logger.error(f"  Career Pages error: {e}")
-                result.errors.append(f"Career Pages: {e}")
+        path = save_jobs(all_jobs, self.project_root / "data" / "jobs_scraped.json")
+        self.logger.info(f"Salvat: {path}")
 
-        # ── Rezultate ───────────────────────────────────────
         result.items_processed = len(all_jobs)
         result.items_succeeded = len(all_jobs)
         result.data = {
             "jobs": all_jobs,
-            "sources_used": sources,
+            "markets_used": [m.key for m in all_markets],
+            "sources_used": sorted({s for m in all_markets for s in m.sources
+                                    if sources is None or s in sources}),
             "total_found": len(all_jobs),
         }
 
-        if result.errors and not all_jobs:
+        # Statusul spune adevărul: varianta veche raporta SUCCESS chiar și
+        # când majoritatea apelurilor eșuaseră.
+        if not all_jobs and result.errors:
             result.status = AgentStatus.FAILED
-            result.message = f"Scraping eșuat: {'; '.join(result.errors)}"
-        elif result.errors:
+            result.message = f"Scraping eșuat: {len(result.errors)} erori"
+        elif blocking_errors:
             result.status = AgentStatus.PARTIAL
-            result.message = f"{len(all_jobs)} joburi găsite (cu erori)"
+            result.message = f"{len(all_jobs)} joburi ({len(blocking_errors)} surse cu probleme)"
         else:
             result.status = AgentStatus.SUCCESS
-            result.message = f"{len(all_jobs)} joburi găsite din {len(sources)} surse"
+            result.message = f"{len(all_jobs)} joburi din {len(all_markets)} piețe"
 
         return self._finish(result)
+
+    def _run_source(self, source: str, market: Market) -> tuple[list[dict], list[str]]:
+        """Rulează o sursă pentru o piață, prinzând orice excepție.
+
+        Contractul e uniform: `(joburi, erori)`. O sursă care crapă întoarce
+        lista goală plus eroarea, nu propagă excepția.
+        """
+        try:
+            if source == "jobspy":
+                return self.jobspy.scrape_market(market)
+            if source == "remote_boards":
+                return self.remote_boards.scrape_market(market)
+            if source == "ro_boards":
+                return self.ro_boards.scrape_market(market)
+            if source == "career_pages":
+                # CareerPageScraper e anterior conceptului de piață și are
+                # altă semnătură; îl adaptăm aici, nu îl rescriem.
+                return self.career.scrape(), []
+            return [], [f"[{market.key}] sursă necunoscută: {source}"]
+        except ImportError as e:
+            return [], [f"[{market.key}/{source}] dependență lipsă: {e}"]
+        except Exception as e:
+            return [], [f"[{market.key}/{source}] {e}"]
