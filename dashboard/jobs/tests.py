@@ -216,6 +216,116 @@ class ViewTests(TestCase):
         self.assertEqual(Job.objects.count(), 0)
 
 
+class SheetBridgeTests(TestCase):
+    def _job(self, **kw):
+        base = dict(url="https://acme.de/jobs/1", title="Python Dev", company="ACME",
+                    location="Berlin", email_hr="jobs@acme.de", language="en",
+                    contact_person="Anna Schmidt", notizen="de sunat", match_score=85)
+        base.update(kw)
+        return Job.objects.create(**base)
+
+    def test_job_to_internal_maps_and_omits_blanks(self):
+        from jobs import sheet_bridge
+        job = self._job(location="", match_score=None)
+        internal = sheet_bridge.job_to_internal(job)
+        self.assertEqual(internal["company"], "ACME")
+        self.assertEqual(internal["contact_person"], "Anna Schmidt")
+        self.assertEqual(internal["gefunden_am"], job.created_at.strftime("%Y-%m-%d"))
+        self.assertNotIn("location", internal)      # gol → omis
+        self.assertNotIn("match_score", internal)   # None → omis
+        self.assertNotIn("status", internal)        # col M nu se emite NICIODATĂ
+        self.assertNotIn("description", internal)
+        self.assertNotIn("sende_befehl", internal)  # doar la cerere
+
+    def test_job_to_internal_with_senden(self):
+        from jobs import sheet_bridge
+        internal = sheet_bridge.job_to_internal(self._job(), sende_befehl="SENDEN")
+        self.assertEqual(internal["sende_befehl"], "SENDEN")
+
+    def test_preview_sheet_row_has_german_headers(self):
+        from jobs import sheet_bridge
+        row = sheet_bridge.preview_sheet_row(self._job())
+        self.assertEqual(row["Firma"], "ACME")
+        self.assertEqual(row["Sende Befehl"], "SENDEN")
+        self.assertEqual(row["Match Score"], 85)
+        self.assertNotIn("Status", row)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_without_secret_fails_without_http(self, _cfg):
+        from jobs import sheet_bridge
+        res = sheet_bridge.push_to_sheet(self._job(), senden=True)
+        self.assertFalse(res["ok"])
+        self.assertIn("N8N_WEBHOOK_SECRET", res["error"])
+
+    @patch("jobs.sheet_bridge.load_pipeline_config", return_value={"n8n": {"enabled": False}})
+    def test_push_with_n8n_disabled_fails(self, _cfg):
+        from jobs import sheet_bridge
+        res = sheet_bridge.push_to_sheet(self._job(), senden=False)
+        self.assertFalse(res["ok"])
+        self.assertIn("dezactivat", res["error"])
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_ok_calls_ingest_with_senden(self, _cfg, mock_client_cls):
+        from jobs import sheet_bridge
+        mock_client_cls.return_value.ingest.return_value = {"ok": True}
+        res = sheet_bridge.push_to_sheet(self._job(), senden=True)
+        self.assertTrue(res["ok"])
+        sent_jobs = mock_client_cls.return_value.ingest.call_args[0][0]
+        self.assertEqual(sent_jobs[0]["sende_befehl"], "SENDEN")
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_http_error_returns_error(self, _cfg, mock_client_cls):
+        from jobs import sheet_bridge
+        mock_client_cls.return_value.ingest.side_effect = RuntimeError("n8n 5xx")
+        res = sheet_bridge.push_to_sheet(self._job(), senden=False)
+        self.assertFalse(res["ok"])
+        self.assertIn("n8n 5xx", res["error"])
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_refresh_marks_processed_only_when_absent(self, _cfg, mock_client_cls):
+        from jobs import sheet_bridge
+        still = self._job(url="https://a.co/still", send_state="senden_pushed")
+        done = self._job(url="https://a.co/done", send_state="senden_pushed")
+        draft = self._job(url="https://a.co/draft")  # send_state=draft
+        mock_client_cls.return_value.get_pending.return_value = [
+            {"Apply URL": "https://a.co/still"}
+        ]
+        changed = sheet_bridge.refresh_states(Job.objects.all())
+        self.assertEqual(changed, 1)
+        still.refresh_from_db(); done.refresh_from_db(); draft.refresh_from_db()
+        self.assertEqual(still.send_state, "senden_pushed")
+        self.assertEqual(done.send_state, "processed")
+        self.assertEqual(draft.send_state, "draft")
+
+    @patch("jobs.sheet_bridge.load_pipeline_config", return_value={"n8n": {"enabled": False}})
+    def test_refresh_with_n8n_disabled_raises(self, _cfg):
+        # Dezactivat → pending gol ar minți „processed"; trebuie eroare explicită
+        from jobs import sheet_bridge
+        self._job(send_state="senden_pushed")
+        with self.assertRaises(RuntimeError):
+            sheet_bridge.refresh_states(Job.objects.all())
+
+    def test_poll_mode_reads_plist(self):
+        from jobs import sheet_bridge
+        with patch("jobs.sheet_bridge.Path.read_text", return_value="<string>--live</string>"):
+            self.assertEqual(sheet_bridge.poll_mode(), "LIVE")
+        with patch("jobs.sheet_bridge.Path.read_text", return_value="<string>poll</string>"):
+            self.assertEqual(sheet_bridge.poll_mode(), "dry-run")
+        with patch("jobs.sheet_bridge.Path.read_text", side_effect=OSError("absent")):
+            self.assertIn("necunoscut", sheet_bridge.poll_mode())
+
+
 class RenderTests(TestCase):
     def test_index_lists_jobs(self):
         Job.objects.create(url="https://a.co/1", title="Alpha", company="A")
