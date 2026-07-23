@@ -69,6 +69,10 @@ class RoBoardsScraper:
         errors: list[str] = []
 
         for group in market.keyword_groups:
+            # Un grup gol în settings.yaml nu are voie să spargă contractul
+            # best-effort („nu ridică") cu un IndexError pe group[0].
+            if not group:
+                continue
             keyword = group[0].lower().replace(" ", "-")
             try:
                 resp = httpx.get(

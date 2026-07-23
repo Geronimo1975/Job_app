@@ -11,7 +11,7 @@ Notă despre fixture: pagina eJobs randează server-side doar primele carduri
 """
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from scrapers.base import Market
 from scrapers.ro_boards import RoBoardsScraper
@@ -54,7 +54,7 @@ class TestParseEjobs:
     def test_every_job_has_absolute_url(self, tmp_path):
         html_text = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
         for job in _scraper(tmp_path)._parse_ejobs(html_text, _market()):
-            assert job["url"].startswith("http")
+            assert job["url"].startswith("https://www.ejobs.ro/")
 
     def test_every_job_has_title(self, tmp_path):
         html_text = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
@@ -90,3 +90,105 @@ class TestScrapeMarket:
         assert jobs == []
         assert errors
         assert "403" in errors[0]
+
+    def test_one_failed_group_does_not_cancel_the_others(self, tmp_path):
+        """Contractul central best-effort: grupul căzut nu șterge joburile celorlalte."""
+        cfg = {
+            "scraping": {
+                "markets": {
+                    "ro_remote": {
+                        "country": "ROMANIA", "language": "en",
+                        "locations": ["Romania"], "remote": True,
+                        "keyword_groups": [["Python Developer"], ["AI Engineer"]],
+                        "sources": ["ro_boards"],
+                        "best_effort_sources": ["ro_boards"],
+                    }
+                }
+            }
+        }
+        market = Market.from_config(cfg)[0]
+        html = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
+
+        def fake_get(url, **kwargs):
+            if "python-developer" in url:
+                raise RuntimeError("503 Service Unavailable")
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.text = html
+            return resp
+
+        with patch("scrapers.ro_boards.httpx.get", side_effect=fake_get):
+            jobs, errors = RoBoardsScraper(cfg, tmp_path).scrape_market(market)
+
+        # Eroarea grupului căzut e înregistrată cu context...
+        assert len(errors) == 1
+        assert "Python Developer" in errors[0] and "503" in errors[0]
+        # ...iar grupul sănătos și-a livrat joburile.
+        assert len(jobs) >= 1
+        assert all(j["platform"] == "ejobs" for j in jobs)
+
+    def test_same_job_from_two_groups_is_deduplicated(self, tmp_path):
+        """Două grupuri care întorc aceeași pagină nu dublează joburile."""
+        cfg = {
+            "scraping": {
+                "markets": {
+                    "ro_remote": {
+                        "country": "ROMANIA", "language": "en",
+                        "locations": ["Romania"], "remote": True,
+                        "keyword_groups": [["Python Developer"], ["AI Engineer"]],
+                        "sources": ["ro_boards"],
+                    }
+                }
+            }
+        }
+        market = Market.from_config(cfg)[0]
+        html = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
+
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.text = html
+
+        with patch("scrapers.ro_boards.httpx.get", return_value=resp):
+            jobs, errors = RoBoardsScraper(cfg, tmp_path).scrape_market(market)
+
+        assert errors == []
+        urls = [j["url"] for j in jobs]
+        assert len(urls) == len(set(urls))          # zero dubluri
+        # Ambele grupuri au întors aceeași pagină → tot atâtea joburi cât dintr-una.
+        single = RoBoardsScraper(cfg, tmp_path)._parse_ejobs(html, market)
+        assert len(jobs) == len(single)
+
+    def test_requested_url_is_slugified(self, tmp_path):
+        """„Python Developer" trebuie cerut ca .../python-developer."""
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.text = "<html></html>"
+
+        with patch("scrapers.ro_boards.httpx.get", return_value=resp) as mock:
+            _scraper(tmp_path).scrape_market(_market())
+
+        called_url = mock.call_args[1]["url"] if "url" in mock.call_args[1] else mock.call_args[0][0]
+        assert "python-developer" in called_url
+        assert " " not in called_url
+
+    def test_empty_keyword_group_does_not_raise(self, tmp_path):
+        """Un grup gol în config nu sparge contractul „nu ridică"."""
+        cfg = {
+            "scraping": {
+                "markets": {
+                    "ro_remote": {
+                        "country": "ROMANIA", "language": "en",
+                        "locations": ["Romania"], "remote": True,
+                        "keyword_groups": [[]],
+                        "sources": ["ro_boards"],
+                    }
+                }
+            }
+        }
+        market = Market.from_config(cfg)[0]
+
+        with patch("scrapers.ro_boards.httpx.get") as mock:
+            jobs, errors = RoBoardsScraper(cfg, tmp_path).scrape_market(market)
+
+        assert jobs == [] and errors == []
+        mock.assert_not_called()
