@@ -45,40 +45,54 @@ skills:
 scraping:
   # Intervall între scraping runs (minute)
   interval_minutes: 360
-  # Max joburi per scraping run
-  max_results_per_source: 50
-  # Keywords de căutare
-  search_keywords:
-    - "Python Developer"
-    - "AI Engineer"
-    - "Data Engineer"
-    - "Game Developer"
-    - "Automation Engineer"
-    - "Django Developer"
-    - "LLM Engineer"
-  # Locații
-  locations:
-    - "Germany"
-    - "Remote"
-    - "Berlin"
-    - "München"
-    - "Hamburg"
-    - "Köln"
-    - "Frankfurt"
-  # Surse active
-  sources:
-    jobspy: true
-    career_pages: true
-    linkedin: false  # necesită autentificare
-  # Filtre
+  # Max joburi per apel de scraping
+  max_results_per_call: 50
+  # Vechimea maximă a anunțului (ore). La interval de 6h, 168h însemna
+  # re-descărcarea acelorași joburi de ~28 de ori.
+  hours_old: 72
+
+  # ── Piețe ─────────────────────────────────────────────────
+  # O piață = țară + limbă + keywords + surse. Codul primește un obiect
+  # Market; adăugarea unei țări noi se face aici, fără cod nou.
+  markets:
+    de:
+      country: "GERMANY"          # enum jobspy Country
+      language: "de"              # → col „Sprache" → limba Anschreiben
+      locations: ["Germany"]      # la nivel de țară, NU pe orașe:
+                                  # Indeed întoarce oricum toate orașele
+      remote: false
+      keyword_groups:
+        - ["Python Developer", "Django Developer", "Backend Engineer"]
+        - ["AI Engineer", "LLM Engineer", "Machine Learning Engineer"]
+        - ["Data Engineer", "Automation Engineer"]
+      sources: ["jobspy", "career_pages"]
+      best_effort_sources: ["linkedin"]
+
+    ro_remote:
+      country: "ROMANIA"
+      language: "en"              # scrisoare EN, nu Anschreiben german
+      locations: ["Romania"]
+      remote: true                # → jobspy is_remote=True
+      keyword_groups:
+        - ["Python Developer", "Django Developer"]
+        - ["AI Engineer", "LLM Engineer"]
+      sources: ["jobspy", "remote_boards", "ro_boards"]
+      best_effort_sources: ["ro_boards", "linkedin"]
+
+  # Site-uri jobspy folosite per piață
+  jobspy_sites: ["indeed", "linkedin"]
+
+  # Filtre — citite de filters/relevance.py
   filters:
-    min_salary: 0
-    experience_max_years: 10
     exclude_keywords:
       - "Senior Staff"
       - "Principal"
       - "Director"
       - "VP"
+      - "Head of"
+    min_salary: 0
+    # Sub acest scor local jobul NU ajunge la AI
+    min_prescore: 40
 
 # ── AI / LLM ───────────────────────────────────────────────
 ai:
