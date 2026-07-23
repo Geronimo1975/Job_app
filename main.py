@@ -40,6 +40,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from agents.base_agent import AgentResult, AgentStatus, load_config, setup_logger
 from agents.scraper_agent import ScraperAgent
 from agents.analyzer_agent import AnalyzerAgent
+from filters.relevance import passes_prefilter, prescore
+from store.seen import ANALIZAT, RESPINS_PREFILTRU, SeenIndex
 from agents.cover_letter_agent import CoverLetterAgent
 from agents.email_agent import EmailAgent
 from agents.document_agent import DocumentAgent
@@ -143,6 +145,37 @@ def validate_environment(config: dict, provider: str | None = None) -> bool:
     return True
 
 
+def apply_prefilter_gate(
+    jobs: list[dict], config: dict, seen: SeenIndex
+) -> tuple[list[dict], dict]:
+    """Poarta ieftină dintre scrape și analyze.
+
+    Elimină joburile deja văzute și pe cele sub pragul local, ca AI-ul să
+    ruleze doar pe ce are șansă. Joburile respinse se memorează, altfel ar
+    fi re-evaluate la fiecare rulare.
+    """
+    stats = {"total": len(jobs), "deja_vazute": 0, "respinse": 0, "retinute": 0}
+
+    fresh = seen.filter_new(jobs)
+    stats["deja_vazute"] = len(jobs) - len(fresh)
+
+    kept = []
+    for job in fresh:
+        score, reasons = prescore(job, config)
+        if not passes_prefilter(job, config):
+            seen.mark(job, RESPINS_PREFILTRU)
+            stats["respinse"] += 1
+            continue
+        job["prescore"] = score
+        # Motivele ajung în col „Keywords Match" — auditabil de ce a trecut.
+        job["keywords_match"] = ", ".join(reasons)
+        seen.mark(job, ANALIZAT)
+        kept.append(job)
+
+    stats["retinute"] = len(kept)
+    return kept, stats
+
+
 def run_pipeline(args):
     logger = setup_logger("Pipeline")
     config = load_config()
@@ -173,6 +206,17 @@ def run_pipeline(args):
 
         if result.status != AgentStatus.FAILED:
             pipeline_jobs = result.data.get("jobs", [])
+            # Poarta ieftină: dedupe cu memorie + prefiltru local, ca analiza
+            # AI să ruleze doar pe joburile cu șansă reală.
+            seen = SeenIndex.load(PROJECT_ROOT / "data" / "seen_jobs.json")
+            pipeline_jobs, gate_stats = apply_prefilter_gate(pipeline_jobs, config, seen)
+            seen.save()
+            print(
+                f"  Prefiltru: {gate_stats['total']} găsite → "
+                f"{gate_stats['deja_vazute']} deja văzute, "
+                f"{gate_stats['respinse']} sub prag → "
+                f"{gate_stats['retinute']} spre analiză"
+            )
             print("📊 Sync → Excel Tracker...")
             tracker = TrackerAgent()
             t_result = tracker.run(action="add_jobs", jobs=pipeline_jobs)
