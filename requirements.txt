@@ -10,6 +10,9 @@ python-jobspy>=1.1.0
 httpx>=0.25.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
+# Parsare XML sigură pentru feed-uri RSS externe (stdlib ElementTree e
+# vulnerabil la expansiune de entități)
+defusedxml>=0.7.1
 
 # AI / LLM
 anthropic>=0.40.0

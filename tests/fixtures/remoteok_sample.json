@@ -1,0 +1,25 @@
+[
+  {
+    "legal": "Please note that this data is for personal use only."
+  },
+  {
+    "id": "1001",
+    "position": "Senior Python Developer",
+    "company": "Acme Remote",
+    "location": "Europe",
+    "url": "https://remoteok.com/remote-jobs/1001",
+    "description": "<p>We need <b>Python</b> and Django experience.</p>",
+    "date": "2026-07-20T10:00:00+00:00",
+    "tags": ["python", "django"]
+  },
+  {
+    "id": "1002",
+    "position": "AI Engineer",
+    "company": "Beta Labs",
+    "location": "Worldwide",
+    "url": "",
+    "description": "LLM work.",
+    "date": "2026-07-21T10:00:00+00:00",
+    "tags": ["ai"]
+  }
+]
