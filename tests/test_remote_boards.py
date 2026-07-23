@@ -41,6 +41,24 @@ class TestParseRemoteOK:
         assert all(j["title"] for j in jobs)
         assert not any("personal use" in j["description"] for j in jobs)
 
+    def test_legal_notice_with_url_is_still_skipped(self, tmp_path):
+        """Gardul pe `position` lucrează singur, nu doar prin lipsa URL-ului."""
+        payload = [
+            {"legal": "Personal use only.", "url": "https://remoteok.com/legal"},
+            {
+                "id": "9",
+                "position": "Python Dev",
+                "company": "X",
+                "location": "Remote",
+                "url": "https://remoteok.com/remote-jobs/9",
+                "description": "d",
+                "date": "2026-07-20",
+            },
+        ]
+        jobs = _scraper(tmp_path)._parse_remoteok(payload, _market())
+        assert len(jobs) == 1
+        assert jobs[0]["title"] == "Python Dev"
+
     def test_drops_entry_without_url(self, tmp_path):
         payload = json.loads((FIXTURES / "remoteok_sample.json").read_text())
         jobs = _scraper(tmp_path)._parse_remoteok(payload, _market())
@@ -84,6 +102,14 @@ class TestParseWwr:
         assert job["company"] == "Delta Inc"
         assert job["title"] == "Backend Engineer (Python)"
 
+    def test_title_without_colon_falls_back_to_full_title(self, tmp_path):
+        """Item fără „Firmă: Poziție" — tot titlul devine poziția, firma rămâne goală."""
+        xml = (FIXTURES / "wwr_sample.xml").read_text()
+        jobs = _scraper(tmp_path)._parse_wwr(xml, _market())
+        solo = next(j for j in jobs if j["url"].endswith("/3002"))
+        assert solo["title"] == "Standalone Python Engineer"
+        assert solo["company"] == ""
+
     def test_maps_link(self, tmp_path):
         xml = (FIXTURES / "wwr_sample.xml").read_text()
         job = _scraper(tmp_path)._parse_wwr(xml, _market())[0]
@@ -112,6 +138,32 @@ class TestScrapeMarket:
         assert jobs == []
         assert len(errors) == 3          # remoteok + remotive + wwr
         assert all("503" in e for e in errors)
+
+    def test_one_downed_board_does_not_cancel_the_others(self, tmp_path):
+        """Invarianta centrală: un board căzut NU anulează rezultatele celorlalte."""
+        remoteok = json.loads((FIXTURES / "remoteok_sample.json").read_text())
+        wwr = (FIXTURES / "wwr_sample.xml").read_text()
+
+        def fake_get(url, **kwargs):
+            if "remotive" in url:
+                raise RuntimeError("503 Service Unavailable")
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            if "remoteok" in url:
+                resp.json.return_value = remoteok
+            else:
+                resp.text = wwr
+            return resp
+
+        with patch("scrapers.remote_boards.httpx.get", side_effect=fake_get):
+            jobs, errors = _scraper(tmp_path).scrape_market(_market())
+
+        # Eroarea board-ului căzut e înregistrată...
+        assert len(errors) == 1
+        assert "remotive" in errors[0] and "503" in errors[0]
+        # ...iar celelalte două board-uri și-au livrat joburile.
+        assert {j["platform"] for j in jobs} == {"remoteok", "weworkremotely"}
+        assert len(jobs) >= 2
 
     def test_successful_boards_return_jobs(self, tmp_path):
         remoteok = json.loads((FIXTURES / "remoteok_sample.json").read_text())
