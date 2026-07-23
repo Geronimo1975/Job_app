@@ -18,6 +18,14 @@ from django.core.management.utils import get_random_secret_key
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+import sys
+
+# Puntea spre pipeline: face importabile sender/n8n_client.py + n8n_mapping.py
+# (refolosire read-only — vezi spec-ul 2026-07-23-dashboard-sheet-send).
+REPO_ROOT = BASE_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

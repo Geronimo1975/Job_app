@@ -40,6 +40,19 @@ class JobModelTests(TestCase):
         with self.assertRaises(IntegrityError):
             Job.objects.create(url="https://a.co/1", title="Dup")
 
+    def test_new_sheet_fields_defaults(self):
+        job = Job.objects.create(url="https://a.co/9", title="X")
+        self.assertEqual(job.contact_person, "")
+        self.assertEqual(job.notizen, "")
+        self.assertIsNone(job.match_score)
+        self.assertEqual(job.send_state, "draft")
+        self.assertIsNone(job.sheet_pushed_at)
+
+    def test_sender_is_importable_from_dashboard(self):
+        # sys.path-ul din settings.py trebuie să facă sender/ importabil
+        from sender.n8n_mapping import FIELD_MAP
+        self.assertEqual(FIELD_MAP["url"], "Apply URL")
+
 
 def _mock_http(text):
     resp = Mock()

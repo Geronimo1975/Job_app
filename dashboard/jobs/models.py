@@ -14,11 +14,19 @@ class Job(models.Model):
     salary_max = models.IntegerField(null=True, blank=True)
     language = models.CharField(max_length=5, blank=True, default="")
     date_posted = models.CharField(max_length=40, blank=True)
+    # Câmpuri FIELD_MAP completabile manual (Sheet: Kontakt Person / Notizen / Match Score)
+    contact_person = models.CharField(max_length=200, blank=True)
+    notizen = models.TextField(blank=True)
+    match_score = models.IntegerField(null=True, blank=True)
     source = models.CharField(max_length=40, default="dashboard")
     # Rezultatul extragerii: "ok" / "partial" / "error".
     extraction_status = models.CharField(max_length=10, default="ok")
     # Extragerea AI brută + eventuale mesaje de eroare, pentru debug.
     raw_json = models.JSONField(default=dict, blank=True)
+    # Starea locală a fluxului de trimitere prin Sheet:
+    # draft → senden_pushed (SENDEN împins) → processed (dedus din pending).
+    send_state = models.CharField(max_length=20, default="draft")
+    sheet_pushed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
