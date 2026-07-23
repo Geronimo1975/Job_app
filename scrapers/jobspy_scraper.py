@@ -1,132 +1,117 @@
 """
-JobSpy Scraper — Agregare joburi de pe LinkedIn, Indeed, Glassdoor, etc.
+JobSpy Scraper — agregare multi-platformă, organizată pe piețe.
 
-Folosește python-jobspy (pip install python-jobspy) pentru a căuta
-joburi pe mai multe platforme simultan.
+Varianta veche făcea produs cartezian keywords × locații (49 de apeluri
+pentru 7 keywords și 7 orașe), din care majoritatea se loveau reciproc de
+rate-limit. Acum: un apel per (grup de keywords, site), rulate în paralel.
 """
 
-import json
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
+
+from scrapers.base import Market, make_job
 
 try:
     from jobspy import scrape_jobs
     HAS_JOBSPY = True
 except ImportError:
+    scrape_jobs = None
     HAS_JOBSPY = False
+
+# Câte apeluri jobspy rulează simultan. Peste 4 crește rata de 429.
+_MAX_WORKERS = 4
 
 
 class JobSpyScraper:
-    """Scraper bazat pe python-jobspy pentru agregare multi-platformă."""
+    """Scraper bazat pe python-jobspy, cu o piață ca unitate de lucru."""
 
     def __init__(self, config: dict, project_root: Path):
         self.config = config
         self.project_root = project_root
-        self.scrape_config = config.get("scraping", {})
+        self.scrape_config = config.get("scraping", {}) or {}
 
-    def scrape(
-        self,
-        keywords: list[str] | None = None,
-        locations: list[str] | None = None,
-        max_results: int | None = None,
-    ) -> list[dict]:
-        """
-        Caută joburi pe platformele suportate.
+    def scrape_market(self, market: Market) -> tuple[list[dict], list[str]]:
+        """Caută joburi pentru o piață.
 
-        Returns:
-            Lista de dicționare cu joburi găsite.
+        Întoarce `(joburi, erori)`. Erorile se întorc, nu se ridică: un site
+        blocat nu trebuie să anuleze rezultatele celorlalte.
         """
         if not HAS_JOBSPY:
             raise ImportError(
                 "python-jobspy nu este instalat. Rulează: pip install python-jobspy"
             )
 
-        keywords = keywords or self.scrape_config.get("search_keywords", [])
-        locations = locations or self.scrape_config.get("locations", ["Germany"])
-        max_results = max_results or self.scrape_config.get("max_results_per_source", 50)
+        sites = self.scrape_config.get("jobspy_sites", ["indeed"])
+        location = market.locations[0] if market.locations else market.country
 
-        all_jobs = []
+        units = [(group, site) for group in market.keyword_groups for site in sites]
 
-        for keyword in keywords:
-            for location in locations:
-                try:
-                    jobs_df = scrape_jobs(
-                        site_name=["indeed", "glassdoor", "google"],
-                        search_term=keyword,
-                        location=location,
-                        results_wanted=max_results,
-                        hours_old=168,  # ultima săptămână
-                        country_indeed="Germany",
-                    )
+        jobs: list[dict] = []
+        errors: list[str] = []
 
-                    if jobs_df is not None and not jobs_df.empty:
-                        for _, row in jobs_df.iterrows():
-                            job = self._normalize_job(row, keyword, location)
-                            if job and not self._is_duplicate(job, all_jobs):
-                                all_jobs.append(job)
-
-                except Exception as e:
-                    print(f"  ⚠ JobSpy error [{keyword} / {location}]: {e}")
-                    continue
-
-        return all_jobs
-
-    def _normalize_job(self, row: Any, keyword: str, location: str) -> dict | None:
-        """Normalizează un rând din DataFrame în format standard."""
-        try:
-            return {
-                "id": f"jobspy_{hash(str(row.get('job_url', '')))}",
-                "source": "jobspy",
-                "platform": str(row.get("site", "unknown")),
-                "title": str(row.get("title", "")),
-                "company": str(row.get("company", "")),
-                "location": str(row.get("location", location)),
-                "url": str(row.get("job_url", "")),
-                "description": str(row.get("description", ""))[:5000],
-                "salary_min": row.get("min_amount"),
-                "salary_max": row.get("max_amount"),
-                "date_posted": str(row.get("date_posted", "")),
-                "scraped_at": datetime.now().isoformat(),
-                "gefunden_am": datetime.now().strftime("%Y-%m-%d"),
-                "search_keyword": keyword,
-                "search_location": location,
-                "applied": False,
-                "status": "new",
+        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+            futures = {
+                pool.submit(self._call, market, group, site, location): (group, site)
+                for group, site in units
             }
+            for future in as_completed(futures):
+                group, site = futures[future]
+                try:
+                    jobs.extend(future.result())
+                except Exception as e:
+                    errors.append(f"[{market.key}/{site}] {group[0]}: {e}")
+
+        return jobs, errors
+
+    def _call(self, market: Market, group: list[str], site: str, location: str) -> list[dict]:
+        """Un singur apel jobspy. Excepțiile urcă — le prinde `scrape_market`."""
+        # Grupul de keywords devine o interogare booleană: un apel în loc de
+        # câte unul per keyword.
+        search_term = " OR ".join(f'"{k}"' for k in group)
+
+        df = scrape_jobs(
+            site_name=[site],
+            search_term=search_term,
+            location=location,
+            results_wanted=int(self.scrape_config.get("max_results_per_call", 50)),
+            hours_old=int(self.scrape_config.get("hours_old", 72)),
+            country_indeed=market.country,
+            is_remote=market.remote,
+        )
+
+        if df is None or df.empty:
+            return []
+
+        jobs = []
+        for _, row in df.iterrows():
+            job = self._normalize_job(row, market)
+            if job:
+                jobs.append(job)
+        return jobs
+
+    def _normalize_job(self, row: Any, market: Market) -> dict | None:
+        """Transformă un rând jobspy în forma canonică."""
+        try:
+            url = str(row.get("job_url", "") or "").strip()
+            # Fără URL nu există cheie de match la upsert („Apply URL"):
+            # n8n ar cădea pe append și ar adăuga rânduri goale.
+            if not url:
+                return None
+
+            platform = str(row.get("site", "unknown"))
+            return make_job(
+                source=f"{platform}-{market.key}",
+                platform=platform,
+                title=str(row.get("title", "")),
+                company=str(row.get("company", "")),
+                location=str(row.get("location", "") or market.country),
+                url=url,
+                description=str(row.get("description", "") or ""),
+                market=market,
+                date_posted=str(row.get("date_posted", "") or ""),
+                salary_min=row.get("min_amount"),
+                salary_max=row.get("max_amount"),
+            )
         except Exception:
             return None
-
-    def _is_duplicate(self, job: dict, existing: list[dict]) -> bool:
-        """Verifică duplicatele pe baza URL sau titlu+companie."""
-        for j in existing:
-            if job["url"] and job["url"] == j["url"]:
-                return True
-            if job["title"] == j["title"] and job["company"] == j["company"]:
-                return True
-        return False
-
-    def save_results(self, jobs: list[dict], output_path: Path | None = None) -> Path:
-        """Salvează rezultatele în JSON."""
-        if output_path is None:
-            output_path = self.project_root / "data" / "jobs_scraped.json"
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Încarcă joburi existente și merge
-        existing = []
-        if output_path.exists():
-            with open(output_path, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-
-        # Adaugă doar joburi noi
-        new_count = 0
-        for job in jobs:
-            if not self._is_duplicate(job, existing):
-                existing.append(job)
-                new_count += 1
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(existing, f, indent=2, ensure_ascii=False, default=str)
-
-        return output_path
