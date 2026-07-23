@@ -23,15 +23,19 @@ class Job(models.Model):
     extraction_status = models.CharField(max_length=10, default="ok")
     # Extragerea AI brută + eventuale mesaje de eroare, pentru debug.
     raw_json = models.JSONField(default=dict, blank=True)
-    # Starea locală a fluxului de trimitere prin Sheet:
-    # draft → senden_pushed (SENDEN împins) → processed (dedus din pending)
-    #                                       ↘ unconfirmed (niciodată văzut în pending).
+    # Fluxul Preview & Send: draft → generated (pachet complet) → sent (+ error).
     send_state = models.CharField(max_length=20, default="draft")
     sheet_pushed_at = models.DateTimeField(null=True, blank=True)
-    # A apărut vreodată în pending după push? „Absent din pending" înseamnă
-    # „procesat" DOAR dacă a fost văzut măcar o dată (altfel e blocat de
-    # filtrul isSent din n8n sau șters din Sheet).
-    seen_in_pending = models.BooleanField(default=False)
+    # Pachetul generat („Execută"): editabil în Preview, trimis la „Transmite".
+    email_subject = models.CharField(max_length=300, blank=True)
+    email_body = models.TextField(blank=True)
+    anschreiben_text = models.TextField(blank=True)
+    anschreiben_pdf_path = models.CharField(max_length=500, blank=True)
+    bewerbung_pdf_path = models.CharField(max_length=500, blank=True)
+    attachments_json = models.JSONField(default=list, blank=True)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    send_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

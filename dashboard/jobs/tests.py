@@ -40,13 +40,20 @@ class JobModelTests(TestCase):
         with self.assertRaises(IntegrityError):
             Job.objects.create(url="https://a.co/1", title="Dup")
 
-    def test_new_sheet_fields_defaults(self):
+    def test_package_fields_defaults(self):
         job = Job.objects.create(url="https://a.co/9", title="X")
         self.assertEqual(job.contact_person, "")
         self.assertEqual(job.notizen, "")
         self.assertIsNone(job.match_score)
         self.assertEqual(job.send_state, "draft")
-        self.assertIsNone(job.sheet_pushed_at)
+        self.assertEqual(job.email_subject, "")
+        self.assertEqual(job.email_body, "")
+        self.assertEqual(job.anschreiben_text, "")
+        self.assertEqual(job.attachments_json, [])
+        self.assertIsNone(job.generated_at)
+        self.assertIsNone(job.sent_at)
+        self.assertEqual(job.send_error, "")
+        self.assertFalse(hasattr(job, "seen_in_pending"))
 
     def test_sender_is_importable_from_dashboard(self):
         # sys.path-ul din settings.py trebuie să facă sender/ importabil
