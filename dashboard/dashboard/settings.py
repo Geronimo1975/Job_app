@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.management.utils import get_random_secret_key
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,11 +22,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# Unealtă locală: cheie de dev cu fallback; setează DJANGO_SECRET_KEY dacă vrei alta.
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-local-only-change-me")
+# Fără secret hardcodat: din env dacă e setat, altfel o cheie aleatoare efemeră.
+# Unealta e locală, fără login — o cheie nouă la fiecare pornire e acceptabilă.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or get_random_secret_key()
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Local, legat de localhost → DEBUG implicit pornit; dezactivează cu DJANGO_DEBUG=0.
+DEBUG = os.environ.get("DJANGO_DEBUG", "1") != "0"
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
