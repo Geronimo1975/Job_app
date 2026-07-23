@@ -326,6 +326,73 @@ class SheetBridgeTests(TestCase):
             self.assertIn("necunoscut", sheet_bridge.poll_mode())
 
 
+class SheetViewTests(TestCase):
+    def _job(self, **kw):
+        base = dict(url="https://acme.de/jobs/1", title="Python Dev", company="ACME")
+        base.update(kw)
+        return Job.objects.create(**base)
+
+    def test_detail_form_saves_new_fields(self):
+        job = self._job()
+        resp = self.client.post(reverse("job_detail", args=[job.pk]), {
+            "title": "Python Dev", "company": "ACME", "location": "Berlin",
+            "email_hr": "hr@acme.de", "contact_person": "Anna Schmidt",
+            "language": "de", "match_score": "90", "notizen": "urgent",
+        })
+        self.assertEqual(resp.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.contact_person, "Anna Schmidt")
+        self.assertEqual(job.match_score, 90)
+        self.assertEqual(job.notizen, "urgent")
+
+    @patch("jobs.views.push_to_sheet", return_value={"ok": True})
+    def test_push_job_does_not_change_send_state(self, mock_push):
+        job = self._job()
+        resp = self.client.post(reverse("push_job", args=[job.pk]))
+        self.assertEqual(resp.status_code, 302)
+        mock_push.assert_called_once()
+        self.assertFalse(mock_push.call_args.kwargs["senden"])
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "draft")
+
+    @patch("jobs.views.poll_mode", return_value="dry-run")
+    def test_send_job_get_shows_confirmation(self, _mode):
+        job = self._job()
+        resp = self.client.get(reverse("send_job", args=[job.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Firma")       # rândul cu chei germane
+        self.assertContains(resp, "SENDEN")
+        self.assertContains(resp, "dry-run")     # modul poll vizibil
+
+    @patch("jobs.views.push_to_sheet", return_value={"ok": True})
+    def test_send_job_post_pushes_and_marks_state(self, mock_push):
+        job = self._job()
+        resp = self.client.post(reverse("send_job", args=[job.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(mock_push.call_args.kwargs["senden"])
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "senden_pushed")
+        self.assertIsNotNone(job.sheet_pushed_at)
+
+    @patch("jobs.views.push_to_sheet", return_value={"ok": False, "error": "n8n 5xx"})
+    def test_send_job_post_error_keeps_state(self, _push):
+        job = self._job()
+        self.client.post(reverse("send_job", args=[job.pk]))
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "draft")
+        self.assertIsNone(job.sheet_pushed_at)
+
+    @patch("jobs.views.refresh_states", return_value=2)
+    def test_refresh_view_reports_count(self, mock_refresh):
+        resp = self.client.post(reverse("refresh_states"), follow=True)
+        self.assertContains(resp, "2")
+
+    @patch("jobs.views.refresh_states", side_effect=RuntimeError("n8n dezactivat"))
+    def test_refresh_view_surfaces_error(self, _refresh):
+        resp = self.client.post(reverse("refresh_states"), follow=True)
+        self.assertContains(resp, "n8n dezactivat")
+
+
 class RenderTests(TestCase):
     def test_index_lists_jobs(self):
         Job.objects.create(url="https://a.co/1", title="Alpha", company="A")
