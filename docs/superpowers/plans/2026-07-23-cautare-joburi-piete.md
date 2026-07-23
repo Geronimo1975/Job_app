@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Python 3.12+. Comentariile, docstring-urile și mesajele de log se scriu **în limba română**.
-- Commit-uri în română cu tag `JOB-NN` secvențial. Ultimul folosit e `JOB-34` (spec-ul). Prima sarcină din plan folosește `JOB-35`, apoi crescător.
+- Commit-uri în română cu tag `JOB-NN` secvențial. Ultimul folosit e `JOB-35`. Prima sarcină din plan folosește `JOB-36`, apoi crescător. Tag-ul exact e dat în comanda de commit a fiecărei sarcini — folosește-l ca atare.
 - **Suita `pytest` NU atinge rețeaua.** Orice apel HTTP se mock-uiește sau se servește dintr-un fixture salvat pe disc.
 - **Nimic nu încarcă `.env` automat** — nu adăuga `load_dotenv`. Variabilele se exportă în shell.
 - **Python nu atinge Google direct.** Orice interacțiune cu Sheet-ul trece prin webhook n8n.
@@ -303,7 +303,7 @@ Așteptat: toate testele PASS.
 
 ```bash
 git add filters/ tests/test_relevance.py
-git commit -m "feat(filters): prefiltru determinist înainte de analiza AI (JOB-35)"
+git commit -m "feat(filters): prefiltru determinist înainte de analiza AI (JOB-36)"
 ```
 
 ---
@@ -644,7 +644,7 @@ Așteptat: toate testele PASS.
 
 ```bash
 git add store/ tests/test_seen.py
-git commit -m "feat(store): index de dedupe cu memorie între rulări (JOB-36)"
+git commit -m "feat(store): index de dedupe cu memorie între rulări (JOB-37)"
 ```
 
 ---
@@ -1026,7 +1026,7 @@ ro_remote ROMANIA en remote=True 2 grupuri
 
 ```bash
 git add scrapers/base.py config/settings.yaml tests/test_market.py
-git commit -m "feat(scraping): piețe configurabile DE + RO remote (JOB-37)"
+git commit -m "feat(scraping): piețe configurabile DE + RO remote (JOB-38)"
 ```
 
 ---
@@ -1342,7 +1342,7 @@ Așteptat: toate testele PASS.
 
 ```bash
 git add scrapers/jobspy_scraper.py tests/test_jobspy_scraper.py
-git commit -m "refactor(jobspy): un apel per grup de keywords, paralel, pe piață (JOB-38)"
+git commit -m "refactor(jobspy): un apel per grup de keywords, paralel, pe piață (JOB-39)"
 ```
 
 ---
@@ -1801,7 +1801,7 @@ Așteptat: toate testele PASS, inclusiv `test_entity_expansion_attack_returns_em
 
 ```bash
 git add scrapers/remote_boards.py requirements.txt tests/test_remote_boards.py tests/fixtures/
-git commit -m "feat(scrapers): board-uri remote cu API public (RemoteOK, Remotive, WWR) (JOB-39)"
+git commit -m "feat(scrapers): board-uri remote cu API public (RemoteOK, Remotive, WWR) (JOB-40)"
 ```
 
 ---
@@ -2085,7 +2085,7 @@ Așteptat: toate testele PASS. Dacă `test_extracts_jobs_from_real_fixture` înt
 
 ```bash
 git add scrapers/ro_boards.py tests/test_ro_boards.py tests/fixtures/ejobs_sample.html
-git commit -m "feat(scrapers): board-uri românești eJobs (best-effort) (JOB-40)"
+git commit -m "feat(scrapers): board-uri românești eJobs (best-effort) (JOB-41)"
 ```
 
 ---
@@ -2402,7 +2402,7 @@ Așteptat: totul trece. Dacă `tests/test_integration.py` pică pentru că folos
 
 ```bash
 git add agents/scraper_agent.py tests/test_scraper_agent.py tests/test_integration.py
-git commit -m "refactor(scraper): orchestrare pe piețe și status onest la erori (JOB-41)"
+git commit -m "refactor(scraper): orchestrare pe piețe și status onest la erori (JOB-42)"
 ```
 
 ---
@@ -2604,7 +2604,7 @@ Așteptat: întreaga suită trece.
 
 ```bash
 git add main.py tests/test_prefilter_gate.py
-git commit -m "feat(pipeline): poartă de dedupe + prefiltru înainte de analiza AI (JOB-42)"
+git commit -m "feat(pipeline): poartă de dedupe + prefiltru înainte de analiza AI (JOB-43)"
 ```
 
 ---
@@ -2912,7 +2912,7 @@ Așteptat: totul trece.
 
 ```bash
 git add n8n_workflows/jobapp_urls.json config/settings.yaml sender/n8n_client.py sender/n8n_mapping.py main.py tests/test_n8n_client.py tests/test_n8n_mapping.py
-git commit -m "feat(n8n): workflow JobApp Urls pentru seed-ul indexului de dedupe (JOB-43)"
+git commit -m "feat(n8n): workflow JobApp Urls pentru seed-ul indexului de dedupe (JOB-44)"
 ```
 
 **Înainte de commit**, rulează recenzorul specializat pe diff — orice modificare care atinge `sender/` sau `n8n_workflows/` intră sub incidența lui (vezi `.claude/agents/n8n-sheet-reviewer.md`).
@@ -3017,7 +3017,7 @@ Așteptat: totul trece.
 
 ```bash
 git add CLAUDE.md
-git commit -m "docs: documentează piețele, poarta de prefiltru și JobApp Urls (JOB-44)"
+git commit -m "docs: documentează piețele, poarta de prefiltru și JobApp Urls (JOB-45)"
 ```
 
 - [ ] **Step 7: Raportează rezultatele reale**
