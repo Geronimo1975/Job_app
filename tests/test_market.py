@@ -63,6 +63,19 @@ class TestMarketFromConfig:
         with pytest.raises(Exception):
             de.country = "FRANCE"
 
+    def test_market_list_fields_are_mutable_in_place(self):
+        """Frozen blochează reasignarea, dar listele interne rămân mutabile.
+
+        Documentat explicit ca să nu fie o surpriză: `Market` nu e cu adevărat
+        imutabil și nu e hashable (are câmpuri listă). Consumatorii nu trebuie
+        să-l pună în seturi/dict-uri și nici să presupună că `locations` nu se
+        poate schimba sub ei.
+        """
+        de = next(m for m in Market.from_config(CFG) if m.key == "de")
+        before = len(de.locations)
+        de.locations.append("Berlin")
+        assert len(de.locations) == before + 1
+
 
 class TestMakeJob:
     @pytest.fixture
