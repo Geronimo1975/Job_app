@@ -14,13 +14,18 @@
     </div>
   </form>
 
+  <form method="post" action="{% url 'refresh_states' %}" style="margin:0 0 16px;">
+    {% csrf_token %}
+    <button type="submit" class="btn-secondary">Actualizează starea trimiterilor</button>
+  </form>
+
   {% if jobs %}
   <div class="table-scroll">
     <table>
       <thead>
         <tr>
           <th>Titlu</th><th>Companie</th><th>Locație</th><th>Email HR</th>
-          <th>Salariu</th><th>Status</th><th>Găsit</th><th aria-label="Acțiuni"></th>
+          <th>Salariu</th><th>Status</th><th>Trimitere</th><th>Găsit</th><th aria-label="Acțiuni"></th>
         </tr>
       </thead>
       <tbody>
@@ -32,6 +37,7 @@
           <td class="mono">{{ job.email_hr|default:"—" }}</td>
           <td class="num">{% if job.salary_min or job.salary_max %}{{ job.salary_min|default:"?" }}–{{ job.salary_max|default:"?" }}{% else %}<span class="dim">—</span>{% endif %}</td>
           <td><span class="pill {{ job.extraction_status }}">{{ job.extraction_status }}</span></td>
+          <td><span class="pill {{ job.send_state }}">{{ job.send_state }}</span></td>
           <td class="dim num">{{ job.created_at|date:"d.m H:i" }}</td>
           <td>
             <form method="post" action="{% url 'delete_job' job.pk %}"

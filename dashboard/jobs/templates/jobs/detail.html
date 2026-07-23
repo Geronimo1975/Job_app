@@ -4,24 +4,40 @@
   <p><a href="{% url 'index' %}">← Înapoi la tabel</a></p>
   <h1>{{ job.title|default:"(fără titlu)" }}</h1>
   <p class="sub">
-    {{ job.company|default:"—" }} · {{ job.location|default:"—" }} ·
     <span class="pill {{ job.extraction_status }}">{{ job.extraction_status }}</span>
+    <span class="pill {{ job.send_state }}">{{ job.send_state }}</span>
+    {% if job.sheet_pushed_at %} · SENDEN împins: {{ job.sheet_pushed_at|date:"d.m.Y H:i" }}{% endif %}
   </p>
-
   <div class="meta">
     <span><strong>URL:</strong> <a href="{{ job.url }}" target="_blank" rel="noopener" class="mono">{{ job.url }}</a></span>
   </div>
-  <div class="meta">
-    <span><strong>Email HR:</strong> <span class="mono">{{ job.email_hr|default:"—" }}</span></span>
-    <span class="num"><strong>Salariu:</strong> {{ job.salary_min|default:"?" }}–{{ job.salary_max|default:"?" }}</span>
-    <span><strong>Limbă:</strong> {{ job.language|default:"—" }}</span>
-    <span><strong>Data postării:</strong> {{ job.date_posted|default:"—" }}</span>
-    <span class="num"><strong>Găsit:</strong> {{ job.created_at|date:"d.m.Y H:i" }}</span>
+
+  <form method="post" action="{% url 'job_detail' job.pk %}">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field"><label for="id_title">Position</label>{{ form.title }}</div>
+      <div class="field"><label for="id_company">Firma</label>{{ form.company }}</div>
+      <div class="field"><label for="id_location">Standort</label>{{ form.location }}</div>
+      <div class="field"><label for="id_email_hr">Kontakt Email</label>{{ form.email_hr }}</div>
+      <div class="field"><label for="id_contact_person">Kontakt Person</label>{{ form.contact_person }}</div>
+      <div class="field"><label for="id_language">Sprache</label>{{ form.language }}</div>
+      <div class="field"><label for="id_match_score">Match Score</label>{{ form.match_score }}</div>
+      <div class="field full"><label for="id_notizen">Notizen</label>{{ form.notizen }}</div>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn-secondary">Salvează local</button>
+    </div>
+  </form>
+
+  <div class="actions">
+    <form method="post" action="{% url 'push_job' job.pk %}">
+      {% csrf_token %}<button type="submit" class="btn-secondary">Salvează în Sheet</button>
+    </form>
+    <a href="{% url 'send_job' job.pk %}"><button type="button" class="btn-primary">Trimite (SENDEN)…</button></a>
   </div>
 
-  <h3>Descriere</h3>
+  <h3>Descriere (doar local)</h3>
   <div class="desc">{{ job.description|default:"(goală)" }}</div>
-
   <h3>JSON brut</h3>
   <pre class="raw mono">{{ job.raw_json }}</pre>
 {% endblock %}
