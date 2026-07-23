@@ -1,7 +1,8 @@
-"""Puntea dashboard → pipeline: upsert în Sheet + comanda SENDEN prin n8n.
+"""Puntea dashboard → Sheet prin n8n: upsert de date + marcarea GESENDET.
 
-Singurul modul al dashboard-ului care importă din sender/ (read-only).
-Nu emite NICIODATĂ col M „Status" — aparține mașinii de stări Apps Script.
+Importă din sender/ read-only. Nu emite NICIODATĂ col M „Status" (mașina de
+stări Apps Script) și nici col P „Sende Befehl" (fluxul SENDEN a fost înlocuit
+de trimiterea directă din dashboard — vezi generation_bridge).
 """
 import os
 from pathlib import Path
@@ -10,16 +11,9 @@ import yaml
 from django.utils import timezone
 
 from sender.n8n_client import N8nClient
-from sender.n8n_mapping import job_to_sheet_row
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SETTINGS = _REPO_ROOT / "config" / "settings.yaml"
-# Job-ul launchd EFECTIV rulează dintr-o copie instalată în ~/Library/LaunchAgents,
-# nu din repo — o verificăm pe aceea întâi, altfel bannerul LIVE/dry-run ar minți.
-_POLL_PLIST_CANDIDATES = [
-    Path.home() / "Library" / "LaunchAgents" / "com.jobapp.poll.plist",
-    _REPO_ROOT / "scripts" / "com.jobapp.poll.plist",
-]
 
 
 def load_pipeline_config() -> dict:
@@ -28,7 +22,7 @@ def load_pipeline_config() -> dict:
         return yaml.safe_load(f) or {}
 
 
-def job_to_internal(job, sende_befehl: str | None = None) -> dict:
+def job_to_internal(job) -> dict:
     """Modelul Django → dict intern (chei engleze din FIELD_MAP).
 
     Emite doar câmpurile cu valoare (upsert-ul n8n golește celula la "").
@@ -50,15 +44,7 @@ def job_to_internal(job, sende_befehl: str | None = None) -> dict:
         "notizen": job.notizen,
         "match_score": job.match_score,
     }
-    internal = {k: v for k, v in data.items() if v is not None and v != ""}
-    if sende_befehl:
-        internal["sende_befehl"] = sende_befehl
-    return internal
-
-
-def preview_sheet_row(job) -> dict:
-    """Rândul EXACT (chei germane) care ar pleca la „Trimite" — pt. confirmare."""
-    return job_to_sheet_row(job_to_internal(job, sende_befehl="SENDEN"))
+    return {k: v for k, v in data.items() if v is not None and v != ""}
 
 
 def _client_or_error(cfg: dict) -> tuple[N8nClient | None, str]:
@@ -71,8 +57,8 @@ def _client_or_error(cfg: dict) -> tuple[N8nClient | None, str]:
     return N8nClient(cfg), ""
 
 
-def push_to_sheet(job, senden: bool) -> dict:
-    """Upsert în Sheet; cu senden=True scrie și col P „Sende Befehl"=SENDEN."""
+def push_to_sheet(job) -> dict:
+    """Upsert-ul câmpurilor în Sheet (match pe Apply URL). Nu emite col P/M."""
     # Fără Apply URL nu există cheie de match: clientul ar arunca rândul
     # silențios și am raporta fals succes.
     if not str(job.url or "").strip():
@@ -84,65 +70,35 @@ def push_to_sheet(job, senden: bool) -> dict:
     client, err = _client_or_error(cfg)
     if client is None:
         return {"ok": False, "error": err}
-    internal = job_to_internal(job, sende_befehl="SENDEN" if senden else None)
     try:
-        client.ingest([internal])
+        client.ingest([job_to_internal(job)])
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True}
 
 
-def poll_mode() -> str:
-    """Modul poll-ului: LIVE dacă ORICARE plist (instalat sau repo) conține --live.
+def mark_sent_in_sheet(job) -> dict:
+    """După un LIVE reușit: col R „Email Status"=GESENDET + „Gesendet am".
 
-    Preferăm avertismentul fals-pozitiv (LIVE deși nu e) unui fals-negativ
-    („dry-run" în timp ce poll-ul instalat chiar trimite emailuri reale).
+    GESENDET e recunoscut de ambele sisteme existente → nimeni nu retrimite.
     """
-    found_any = False
-    for plist in _POLL_PLIST_CANDIDATES:
-        try:
-            content = plist.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        found_any = True
-        if "--live" in content:
-            return "LIVE"
-    return "dry-run" if found_any else "necunoscut (dry-run implicit)"
-
-
-def refresh_states(jobs_qs) -> int:
-    """Actualizează stările senden_pushed din pending. Întoarce câte s-au schimbat.
-
-    „Absent din pending" înseamnă „procesat" DOAR pentru rânduri văzute măcar
-    o dată în pending. Un rând împins dar NICIODATĂ văzut e blocat de filtrul
-    isSent din n8n (rând deja trimis) sau șters/editat în Sheet → stare
-    distinctă „unconfirmed", nu un fals „processed".
-
-    Ridică RuntimeError dacă n8n e indisponibil/dezactivat — un pending gol
-    fals ar marca totul „processed".
-    """
+    if not str(job.url or "").strip():
+        return {"ok": False, "error": "jobul nu are Apply URL."}
     try:
         cfg = load_pipeline_config()
     except Exception as e:
-        raise RuntimeError(f"config necititbil: {e}") from e
+        return {"ok": False, "error": f"config necititbil: {e}"}
     client, err = _client_or_error(cfg)
     if client is None:
-        raise RuntimeError(err)
-    pending_urls = {
-        str(c.get("Apply URL", "")).strip() for c in client.get_pending()
+        return {"ok": False, "error": err}
+    moment = timezone.localtime(job.sent_at or timezone.now())
+    payload = {
+        "url": job.url,
+        "email_status": "GESENDET",
+        "gesendet_am": moment.strftime("%Y-%m-%d %H:%M"),
     }
-    changed = 0
-    for job in jobs_qs.filter(send_state="senden_pushed"):
-        if job.url.strip() in pending_urls:
-            if not job.seen_in_pending:
-                job.seen_in_pending = True
-                job.save(update_fields=["seen_in_pending"])
-        elif job.seen_in_pending:
-            job.send_state = "processed"
-            job.save(update_fields=["send_state"])
-            changed += 1
-        else:
-            job.send_state = "unconfirmed"
-            job.save(update_fields=["send_state"])
-            changed += 1
-    return changed
+    try:
+        client.ingest([payload])
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True}

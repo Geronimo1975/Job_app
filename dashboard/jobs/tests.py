@@ -244,32 +244,19 @@ class SheetBridgeTests(TestCase):
         self.assertNotIn("description", internal)
         self.assertNotIn("sende_befehl", internal)  # doar la cerere
 
-    def test_job_to_internal_with_senden(self):
-        from jobs import sheet_bridge
-        internal = sheet_bridge.job_to_internal(self._job(), sende_befehl="SENDEN")
-        self.assertEqual(internal["sende_befehl"], "SENDEN")
-
-    def test_preview_sheet_row_has_german_headers(self):
-        from jobs import sheet_bridge
-        row = sheet_bridge.preview_sheet_row(self._job())
-        self.assertEqual(row["Firma"], "ACME")
-        self.assertEqual(row["Sende Befehl"], "SENDEN")
-        self.assertEqual(row["Match Score"], 85)
-        self.assertNotIn("Status", row)
-
     @patch.dict(os.environ, {}, clear=True)
     @patch("jobs.sheet_bridge.load_pipeline_config",
            return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
     def test_push_without_secret_fails_without_http(self, _cfg):
         from jobs import sheet_bridge
-        res = sheet_bridge.push_to_sheet(self._job(), senden=True)
+        res = sheet_bridge.push_to_sheet(self._job())
         self.assertFalse(res["ok"])
         self.assertIn("N8N_WEBHOOK_SECRET", res["error"])
 
     @patch("jobs.sheet_bridge.load_pipeline_config", return_value={"n8n": {"enabled": False}})
     def test_push_with_n8n_disabled_fails(self, _cfg):
         from jobs import sheet_bridge
-        res = sheet_bridge.push_to_sheet(self._job(), senden=False)
+        res = sheet_bridge.push_to_sheet(self._job())
         self.assertFalse(res["ok"])
         self.assertIn("dezactivat", res["error"])
 
@@ -277,13 +264,14 @@ class SheetBridgeTests(TestCase):
     @patch("jobs.sheet_bridge.N8nClient")
     @patch("jobs.sheet_bridge.load_pipeline_config",
            return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
-    def test_push_ok_calls_ingest_with_senden(self, _cfg, mock_client_cls):
+    def test_push_ok_never_emits_sende_befehl(self, _cfg, mock_client_cls):
         from jobs import sheet_bridge
         mock_client_cls.return_value.ingest.return_value = {"ok": True}
-        res = sheet_bridge.push_to_sheet(self._job(), senden=True)
+        res = sheet_bridge.push_to_sheet(self._job())
         self.assertTrue(res["ok"])
         sent_jobs = mock_client_cls.return_value.ingest.call_args[0][0]
-        self.assertEqual(sent_jobs[0]["sende_befehl"], "SENDEN")
+        self.assertNotIn("sende_befehl", sent_jobs[0])
+        self.assertNotIn("status", sent_jobs[0])
 
     @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
     @patch("jobs.sheet_bridge.N8nClient")
@@ -292,55 +280,14 @@ class SheetBridgeTests(TestCase):
     def test_push_http_error_returns_error(self, _cfg, mock_client_cls):
         from jobs import sheet_bridge
         mock_client_cls.return_value.ingest.side_effect = RuntimeError("n8n 5xx")
-        res = sheet_bridge.push_to_sheet(self._job(), senden=False)
+        res = sheet_bridge.push_to_sheet(self._job())
         self.assertFalse(res["ok"])
         self.assertIn("n8n 5xx", res["error"])
-
-    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
-    @patch("jobs.sheet_bridge.N8nClient")
-    @patch("jobs.sheet_bridge.load_pipeline_config",
-           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
-    def test_refresh_processed_only_after_seen_in_pending(self, _cfg, mock_client_cls):
-        # „absent din pending" ≠ „procesat": filtrul isSent din n8n exclude
-        # rândurile deja trimise, care n-ar apărea NICIODATĂ în pending.
-        from jobs import sheet_bridge
-        still = self._job(url="https://a.co/still", send_state="senden_pushed")
-        done = self._job(url="https://a.co/done", send_state="senden_pushed",
-                         seen_in_pending=True)
-        fresh = self._job(url="https://a.co/fresh", send_state="senden_pushed")
-        draft = self._job(url="https://a.co/draft")  # send_state=draft
-        mock_client_cls.return_value.get_pending.return_value = [
-            {"Apply URL": "https://a.co/still "}  # spațiu → testează normalizarea
-        ]
-        changed = sheet_bridge.refresh_states(Job.objects.all())
-        self.assertEqual(changed, 2)  # done→processed, fresh→unconfirmed
-        still.refresh_from_db(); done.refresh_from_db()
-        fresh.refresh_from_db(); draft.refresh_from_db()
-        self.assertEqual(still.send_state, "senden_pushed")
-        self.assertTrue(still.seen_in_pending)          # văzut acum
-        self.assertEqual(done.send_state, "processed")  # văzut cândva, acum absent
-        self.assertEqual(fresh.send_state, "unconfirmed")  # niciodată văzut
-        self.assertEqual(draft.send_state, "draft")
-
-    @patch("jobs.sheet_bridge.load_pipeline_config", return_value={"n8n": {"enabled": False}})
-    def test_refresh_with_n8n_disabled_raises(self, _cfg):
-        # Dezactivat → pending gol ar minți „processed"; trebuie eroare explicită
-        from jobs import sheet_bridge
-        self._job(send_state="senden_pushed")
-        with self.assertRaises(RuntimeError):
-            sheet_bridge.refresh_states(Job.objects.all())
-
-    @patch("jobs.sheet_bridge.load_pipeline_config", side_effect=Exception("yaml corupt"))
-    def test_refresh_with_broken_config_raises_runtimeerror(self, _cfg):
-        # Config necititbil trebuie să devină RuntimeError (mesaj), nu 500
-        from jobs import sheet_bridge
-        with self.assertRaises(RuntimeError):
-            sheet_bridge.refresh_states(Job.objects.all())
 
     def test_push_blank_url_fails_without_http(self):
         from jobs import sheet_bridge
         job = self._job(url="   ")
-        res = sheet_bridge.push_to_sheet(job, senden=True)
+        res = sheet_bridge.push_to_sheet(job)
         self.assertFalse(res["ok"])
         self.assertIn("URL", res["error"])
 
@@ -355,25 +302,27 @@ class SheetBridgeTests(TestCase):
         internal = sheet_bridge.job_to_internal(job)
         self.assertEqual(internal["gefunden_am"], "2026-07-23")
 
-    def test_poll_mode_checks_installed_plist_first(self):
-        # Job-ul launchd EFECTIV e o copie în ~/Library/LaunchAgents — dacă
-        # oricare plist conține --live, bannerul trebuie să spună LIVE.
-        import tempfile
-        from pathlib import Path as P
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_mark_sent_writes_gesendet(self, _cfg, mock_client_cls):
+        import datetime
         from jobs import sheet_bridge
-        with tempfile.TemporaryDirectory() as td:
-            installed = P(td) / "installed.plist"
-            repo = P(td) / "repo.plist"
-            with patch.object(sheet_bridge, "_POLL_PLIST_CANDIDATES", [installed, repo]):
-                # niciun plist → necunoscut
-                self.assertIn("necunoscut", sheet_bridge.poll_mode())
-                # doar repo, fără --live → dry-run
-                repo.write_text("<string>poll</string>", encoding="utf-8")
-                self.assertEqual(sheet_bridge.poll_mode(), "dry-run")
-                # instalatul are --live (repo nu) → LIVE
-                installed.write_text("<string>--live</string>", encoding="utf-8")
-                self.assertEqual(sheet_bridge.poll_mode(), "LIVE")
+        job = self._job()
+        job.sent_at = datetime.datetime(2026, 7, 23, 12, 0, tzinfo=datetime.timezone.utc)
+        res = sheet_bridge.mark_sent_in_sheet(job)
+        self.assertTrue(res["ok"])
+        payload = mock_client_cls.return_value.ingest.call_args[0][0][0]
+        self.assertEqual(payload["email_status"], "GESENDET")
+        self.assertEqual(payload["url"], job.url)
+        self.assertTrue(payload["gesendet_am"].startswith("2026-07-23"))
 
+    @patch("jobs.sheet_bridge.load_pipeline_config", return_value={"n8n": {"enabled": False}})
+    def test_mark_sent_disabled_fails(self, _cfg):
+        from jobs import sheet_bridge
+        res = sheet_bridge.mark_sent_in_sheet(self._job())
+        self.assertFalse(res["ok"])
 
 class SheetViewTests(TestCase):
     def _job(self, **kw):
@@ -381,11 +330,6 @@ class SheetViewTests(TestCase):
                     email_hr="hr@acme.de")
         base.update(kw)
         return Job.objects.create(**base)
-
-    def _confirm_hash(self, job):
-        """Ia row_hash-ul din pagina de confirmare (fluxul real GET→POST)."""
-        resp = self.client.get(reverse("send_job", args=[job.pk]))
-        return resp.context["row_hash"]
 
     def test_detail_form_saves_new_fields(self):
         job = self._job()
@@ -406,92 +350,8 @@ class SheetViewTests(TestCase):
         resp = self.client.post(reverse("push_job", args=[job.pk]))
         self.assertEqual(resp.status_code, 302)
         mock_push.assert_called_once()
-        self.assertFalse(mock_push.call_args.kwargs["senden"])
         job.refresh_from_db()
         self.assertEqual(job.send_state, "draft")
-
-    @patch("jobs.views.poll_mode", return_value="dry-run")
-    def test_send_job_get_shows_confirmation(self, _mode):
-        job = self._job()
-        resp = self.client.get(reverse("send_job", args=[job.pk]))
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "Firma")       # rândul cu chei germane
-        self.assertContains(resp, "SENDEN")
-        self.assertContains(resp, "dry-run")     # modul poll vizibil
-        self.assertContains(resp, 'name="row_hash"')  # amprenta rândului aprobat
-
-    @patch("jobs.views.poll_mode", return_value="LIVE")
-    def test_send_job_get_live_banner(self, _mode):
-        # Bannerul LIVE e singura semnalizare înaintea unui email REAL
-        job = self._job()
-        resp = self.client.get(reverse("send_job", args=[job.pk]))
-        self.assertContains(resp, "LIVE")
-        self.assertContains(resp, "REAL")
-
-    @patch("jobs.views.poll_mode", return_value="dry-run")
-    def test_send_job_get_blocked_without_email(self, _mode):
-        # Fără Kontakt Email comanda nu poate fi consumată → fără formular de confirmare
-        job = self._job(email_hr="")
-        resp = self.client.get(reverse("send_job", args=[job.pk]))
-        self.assertContains(resp, "Kontakt Email")
-        self.assertNotContains(resp, 'name="row_hash"')
-
-    @patch("jobs.views.poll_mode", return_value="dry-run")
-    def test_send_job_get_blocked_when_not_draft(self, _mode):
-        job = self._job(send_state="senden_pushed")
-        resp = self.client.get(reverse("send_job", args=[job.pk]))
-        self.assertNotContains(resp, 'name="row_hash"')
-
-    @patch("jobs.views.push_to_sheet", return_value={"ok": True})
-    def test_send_job_post_pushes_and_marks_state(self, mock_push):
-        job = self._job()
-        with patch("jobs.views.poll_mode", return_value="dry-run"):
-            row_hash = self._confirm_hash(job)
-        resp = self.client.post(reverse("send_job", args=[job.pk]), {"row_hash": row_hash})
-        self.assertEqual(resp.status_code, 302)
-        self.assertTrue(mock_push.call_args.kwargs["senden"])
-        job.refresh_from_db()
-        self.assertEqual(job.send_state, "senden_pushed")
-        self.assertIsNotNone(job.sheet_pushed_at)
-
-    @patch("jobs.views.push_to_sheet", return_value={"ok": True})
-    def test_send_job_post_blocked_without_email(self, mock_push):
-        job = self._job(email_hr="")
-        self.client.post(reverse("send_job", args=[job.pk]), {"row_hash": "x"})
-        mock_push.assert_not_called()
-        job.refresh_from_db()
-        self.assertEqual(job.send_state, "draft")
-
-    @patch("jobs.views.push_to_sheet", return_value={"ok": True})
-    def test_send_job_post_blocked_when_not_draft(self, mock_push):
-        # Re-send pe un rând deja împins/trimis ar arma SENDEN orfan în Sheet
-        job = self._job(send_state="processed")
-        self.client.post(reverse("send_job", args=[job.pk]), {"row_hash": "x"})
-        mock_push.assert_not_called()
-        job.refresh_from_db()
-        self.assertEqual(job.send_state, "processed")
-
-    @patch("jobs.views.push_to_sheet", return_value={"ok": True})
-    def test_send_job_post_blocked_on_stale_hash(self, mock_push):
-        # Rândul s-a schimbat între confirmarea văzută și POST → nu trimite
-        job = self._job()
-        with patch("jobs.views.poll_mode", return_value="dry-run"):
-            row_hash = self._confirm_hash(job)
-        job.title = "ALT TITLU"
-        job.save()
-        resp = self.client.post(reverse("send_job", args=[job.pk]), {"row_hash": row_hash})
-        mock_push.assert_not_called()
-        self.assertEqual(resp.status_code, 302)  # înapoi la confirmare
-
-    @patch("jobs.views.push_to_sheet", return_value={"ok": False, "error": "n8n 5xx"})
-    def test_send_job_post_error_keeps_state(self, _push):
-        job = self._job()
-        with patch("jobs.views.poll_mode", return_value="dry-run"):
-            row_hash = self._confirm_hash(job)
-        self.client.post(reverse("send_job", args=[job.pk]), {"row_hash": row_hash})
-        job.refresh_from_db()
-        self.assertEqual(job.send_state, "draft")
-        self.assertIsNone(job.sheet_pushed_at)
 
     @patch("jobs.views.push_to_sheet", return_value={"ok": True})
     def test_push_job_get_does_not_push(self, mock_push):
@@ -501,37 +361,233 @@ class SheetViewTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         mock_push.assert_not_called()
 
-    def test_delete_blocked_when_senden_armed(self):
-        # Ștergerea locală NU dezarmează SENDEN din Sheet — trebuie blocată
-        job = self._job(send_state="senden_pushed")
-        resp = self.client.post(reverse("delete_job", args=[job.pk]), follow=True)
-        self.assertEqual(Job.objects.count(), 1)
-        self.assertContains(resp, "SENDEN")
+class GenerationBridgeTests(TestCase):
+    def _job(self, **kw):
+        base = dict(url="https://acme.de/jobs/1", title="Python Dev", company="ACME",
+                    email_hr="hr@acme.de", language="de", description="Beschreibung")
+        base.update(kw)
+        return Job.objects.create(**base)
 
-    def test_reset_job_returns_to_draft(self):
-        job = self._job(send_state="processed", seen_in_pending=True)
-        resp = self.client.post(reverse("reset_job", args=[job.pk]))
+    @patch("jobs.generation_bridge.assemble_bewerbung")
+    @patch("jobs.generation_bridge.text_to_pdf")
+    @patch("jobs.generation_bridge.EmailBodyGenerator")
+    @patch("jobs.generation_bridge.CoverLetterGenerator")
+    @patch("jobs.generation_bridge.load_pipeline_config",
+           return_value={"applicant": {"name": "George"}})
+    def test_generate_package_populates_all_fields(self, _cfg, mock_cl, mock_eb, mock_pdf, mock_asm):
+        import tempfile
+        from pathlib import Path
+        from jobs import generation_bridge
+        with tempfile.TemporaryDirectory() as td:
+            txt = Path(td) / "Anschreiben_ACME.txt"
+            txt.write_text("Sehr geehrte...", encoding="utf-8")
+            mock_cl.return_value.generate.return_value = "Sehr geehrte..."
+            mock_cl.return_value.save_cover_letter.return_value = txt
+            mock_eb.return_value.generate.return_value = "Body email"
+            res = generation_bridge.generate_package(self._job())
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["email_subject"], "Bewerbung als Python Dev — George")
+        self.assertEqual(res["email_body"], "Body email")
+        self.assertEqual(res["anschreiben_text"], "Sehr geehrte...")
+        self.assertTrue(res["anschreiben_pdf_path"].endswith(".pdf"))
+        mock_pdf.assert_called_once()
+
+    @patch("jobs.generation_bridge.CoverLetterGenerator")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_generate_package_ai_error_is_error(self, _cfg, mock_cl):
+        from jobs import generation_bridge
+        mock_cl.return_value.generate.side_effect = Exception("AI down")
+        res = generation_bridge.generate_package(self._job())
+        self.assertFalse(res["ok"])
+        self.assertIn("AI down", res["error"])
+
+    @patch("jobs.generation_bridge.SmtpSender")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_send_package_dry_run(self, _cfg, mock_smtp):
+        from jobs import generation_bridge
+        mock_smtp.return_value.send.return_value = True
+        job = self._job(email_subject="S", email_body="B")
+        res = generation_bridge.send_package(job, live=False)
+        self.assertTrue(res["ok"])
+        self.assertFalse(res["live"])
+        self.assertTrue(mock_smtp.return_value.send.call_args.kwargs["dry_run"])
+
+    @patch("jobs.generation_bridge.SmtpSender")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_send_package_live(self, _cfg, mock_smtp):
+        from jobs import generation_bridge
+        mock_smtp.return_value.send.return_value = True
+        res = generation_bridge.send_package(
+            self._job(email_subject="S", email_body="B"), live=True)
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["live"])
+        self.assertFalse(mock_smtp.return_value.send.call_args.kwargs["dry_run"])
+
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_send_package_without_email_fails(self, _cfg):
+        from jobs import generation_bridge
+        res = generation_bridge.send_package(self._job(email_hr=""), live=True)
+        self.assertFalse(res["ok"])
+        self.assertIn("Kontakt Email", res["error"])
+
+    @patch("jobs.generation_bridge.SmtpSender")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_send_package_refused_is_error(self, _cfg, mock_smtp):
+        from jobs import generation_bridge
+        mock_smtp.return_value.send.return_value = False
+        res = generation_bridge.send_package(
+            self._job(email_subject="S", email_body="B"), live=True)
+        self.assertFalse(res["ok"])
+        self.assertIn("refuzat", res["error"])
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s"})
+    @patch("jobs.generation_bridge.N8nClient")
+    @patch("jobs.generation_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_already_sent_checks_known_urls(self, _cfg, mock_client):
+        from jobs import generation_bridge
+        mock_client.return_value.get_known_urls.return_value = ["https://acme.de/jobs/1"]
+        self.assertEqual(generation_bridge.already_sent_in_sheet(self._job()), "da")
+        mock_client.return_value.get_known_urls.return_value = []
+        self.assertEqual(
+            generation_bridge.already_sent_in_sheet(self._job(url="https://x.de/2")), "nu")
+
+    @patch("jobs.generation_bridge.load_pipeline_config", side_effect=Exception("boom"))
+    def test_already_sent_unknown_on_error(self, _cfg):
+        from jobs import generation_bridge
+        self.assertIn("necunoscut", generation_bridge.already_sent_in_sheet(self._job()))
+
+
+class PreviewSendViewTests(TestCase):
+    def _job(self, **kw):
+        base = dict(url="https://acme.de/jobs/1", title="Python Dev", company="ACME",
+                    email_hr="hr@acme.de", send_state="generated",
+                    email_subject="S", email_body="B", anschreiben_text="A",
+                    attachments_json=[])
+        base.update(kw)
+        return Job.objects.create(**base)
+
+    @patch("jobs.views.generate_package", return_value={
+        "ok": True, "email_subject": "Subj", "email_body": "Body",
+        "anschreiben_text": "Text", "anschreiben_pdf_path": "/tmp/a.pdf",
+        "bewerbung_pdf_path": "", "attachments": ["/tmp/a.pdf"]})
+    def test_execute_populates_and_redirects_to_preview(self, _gen):
+        job = self._job(send_state="draft")
+        resp = self.client.post(reverse("execute_job", args=[job.pk]))
         self.assertEqual(resp.status_code, 302)
         job.refresh_from_db()
-        self.assertEqual(job.send_state, "draft")
-        self.assertFalse(job.seen_in_pending)
+        self.assertEqual(job.send_state, "generated")
+        self.assertEqual(job.email_subject, "Subj")
+        self.assertIsNotNone(job.generated_at)
 
-    @patch("jobs.views.refresh_states", return_value=2)
-    def test_refresh_view_reports_count(self, mock_refresh):
-        resp = self.client.post(reverse("refresh_states"), follow=True)
-        self.assertContains(resp, "2")
+    @patch("jobs.views.generate_package", return_value={"ok": False, "error": "AI down"})
+    def test_execute_error_sets_error_state(self, _gen):
+        job = self._job(send_state="draft")
+        self.client.post(reverse("execute_job", args=[job.pk]))
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "error")
+        self.assertIn("AI down", job.send_error)
 
-    @patch("jobs.views.refresh_states", side_effect=RuntimeError("n8n dezactivat"))
-    def test_refresh_view_surfaces_error(self, _refresh):
-        resp = self.client.post(reverse("refresh_states"), follow=True)
-        self.assertContains(resp, "n8n dezactivat")
+    @patch("jobs.views.generate_package")
+    def test_execute_blocked_on_sent(self, mock_gen):
+        job = self._job(send_state="sent")
+        self.client.post(reverse("execute_job", args=[job.pk]))
+        mock_gen.assert_not_called()
 
-    @patch("jobs.views.refresh_states", side_effect=ValueError("crash neașteptat"))
-    def test_refresh_view_catches_any_exception(self, _refresh):
-        # Orice excepție → mesaj pe pagină, nu 500 („nimic silențios")
-        resp = self.client.post(reverse("refresh_states"), follow=True)
+    def test_preview_get_shows_package(self):
+        job = self._job()
+        resp = self.client.get(reverse("preview_job", args=[job.pk]))
+        self.assertContains(resp, "hr@acme.de")
+        self.assertContains(resp, "B")
+
+    @patch("jobs.views.regenerate_pdfs", return_value={"ok": True})
+    def test_preview_post_saves_edits_and_regenerates(self, mock_regen):
+        job = self._job(anschreiben_pdf_path="/tmp/a.pdf")
+        resp = self.client.post(reverse("preview_job", args=[job.pk]), {
+            "email_subject": "Nou", "email_body": "Body nou",
+            "anschreiben_text": "Text nou",
+        })
+        self.assertEqual(resp.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.email_subject, "Nou")
+        self.assertEqual(job.anschreiben_text, "Text nou")
+        mock_regen.assert_called_once()
+
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_get_shows_confirm(self, _chk):
+        job = self._job()
+        resp = self.client.get(reverse("transmit_job", args=[job.pk]))
+        self.assertContains(resp, "LIVE")
+        self.assertContains(resp, "hr@acme.de")
+
+    @patch("jobs.views.send_package", return_value={"ok": True, "live": False})
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_dry_run_keeps_generated(self, _chk, mock_send):
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {})  # fără live
+        self.assertFalse(mock_send.call_args.kwargs["live"])
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "generated")
+
+    @patch("jobs.views.mark_sent_in_sheet", return_value={"ok": True})
+    @patch("jobs.views.send_package", return_value={"ok": True, "live": True})
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_live_marks_sent_and_sheet(self, _chk, mock_send, mock_mark):
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        self.assertTrue(mock_send.call_args.kwargs["live"])
+        mock_mark.assert_called_once()
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "sent")
+        self.assertIsNotNone(job.sent_at)
+
+    @patch("jobs.views.send_package")
+    @patch("jobs.views.already_sent_in_sheet", return_value="da")
+    def test_transmit_live_blocked_when_already_sent(self, _chk, mock_send):
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        mock_send.assert_not_called()
+
+    @patch("jobs.views.send_package",
+           return_value={"ok": False, "live": True, "error": "rate limit"})
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_failure_sets_error(self, _chk, _send):
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "error")
+        self.assertIn("rate limit", job.send_error)
+
+    @patch("jobs.views.send_package")
+    def test_transmit_blocked_wrong_state(self, mock_send):
+        job = self._job(send_state="draft")
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        mock_send.assert_not_called()
+
+    def test_serve_doc_missing_404(self):
+        job = self._job()  # fără anschreiben_pdf_path
+        resp = self.client.get(reverse("serve_doc", args=[job.pk, "anschreiben"]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_serve_doc_serves_real_file(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(b"%PDF-1.4 test")
+        job = self._job(anschreiben_pdf_path=f.name)
+        resp = self.client.get(reverse("serve_doc", args=[job.pk, "anschreiben"]))
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "crash neașteptat")
+
+    def test_serve_attachment_out_of_range_404(self):
+        job = self._job(attachments_json=["/tmp/nu-exista.pdf"])
+        resp = self.client.get(reverse("serve_attachment", args=[job.pk, 5]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_sent_list_filters(self):
+        self._job(url="https://a.co/1", send_state="sent", title="Trimis")
+        self._job(url="https://a.co/2", send_state="generated", title="Netrimis")
+        resp = self.client.get(reverse("sent_list"))
+        self.assertContains(resp, "Trimis")
+        self.assertNotContains(resp, "Netrimis")
 
 
 class RenderTests(TestCase):
@@ -552,8 +608,7 @@ class RenderTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Detalii aici")
 
-    def test_index_states_legend_is_honest(self):
-        # „processed" e o deducție — legenda trebuie să trimită la Sheet
-        Job.objects.create(url="https://a.co/1", title="Alpha", send_state="processed")
+    def test_index_states_legend_present(self):
+        Job.objects.create(url="https://a.co/1", title="Alpha", send_state="sent")
         resp = self.client.get(reverse("index"))
-        self.assertContains(resp, "Email Status")
+        self.assertContains(resp, "GESENDET")
