@@ -158,3 +158,22 @@ class ViewTests(TestCase):
         resp = self.client.post(reverse("delete_job", args=[job.pk]))
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(Job.objects.count(), 0)
+
+
+class RenderTests(TestCase):
+    def test_index_lists_jobs(self):
+        Job.objects.create(url="https://a.co/1", title="Alpha", company="A")
+        resp = self.client.get(reverse("index"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Alpha")
+
+    def test_empty_index_shows_hint(self):
+        resp = self.client.get(reverse("index"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Niciun job încă")
+
+    def test_detail_renders(self):
+        job = Job.objects.create(url="https://a.co/1", title="Alpha", description="Detalii aici")
+        resp = self.client.get(reverse("job_detail", args=[job.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Detalii aici")

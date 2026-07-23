@@ -1,0 +1,27 @@
+{% extends "jobs/base.html" %}
+{% block title %}{{ job.title|default:"Job" }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'index' %}">← Înapoi la tabel</a></p>
+  <h1>{{ job.title|default:"(fără titlu)" }}</h1>
+  <p class="sub">
+    {{ job.company|default:"—" }} · {{ job.location|default:"—" }} ·
+    <span class="pill {{ job.extraction_status }}">{{ job.extraction_status }}</span>
+  </p>
+
+  <div class="meta">
+    <span><strong>URL:</strong> <a href="{{ job.url }}" target="_blank" rel="noopener" class="mono">{{ job.url }}</a></span>
+  </div>
+  <div class="meta">
+    <span><strong>Email HR:</strong> <span class="mono">{{ job.email_hr|default:"—" }}</span></span>
+    <span class="num"><strong>Salariu:</strong> {{ job.salary_min|default:"?" }}–{{ job.salary_max|default:"?" }}</span>
+    <span><strong>Limbă:</strong> {{ job.language|default:"—" }}</span>
+    <span><strong>Data postării:</strong> {{ job.date_posted|default:"—" }}</span>
+    <span class="num"><strong>Găsit:</strong> {{ job.created_at|date:"d.m.Y H:i" }}</span>
+  </div>
+
+  <h3>Descriere</h3>
+  <div class="desc">{{ job.description|default:"(goală)" }}</div>
+
+  <h3>JSON brut</h3>
+  <pre class="raw mono">{{ job.raw_json }}</pre>
+{% endblock %}

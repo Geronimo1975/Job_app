@@ -1,0 +1,57 @@
+{% extends "jobs/base.html" %}
+{% block content %}
+  <h1>Job Dashboard</h1>
+  <p class="sub">Lipește link-ul unui job — Claude extrage structura în tabel.</p>
+
+  <form class="add" method="post" action="{% url 'add_job' %}">
+    {% csrf_token %}
+    <label for="url-input">Link job</label>
+    <div class="add-row">
+      <input id="url-input" type="url" name="url" class="mono"
+             placeholder="https://…/job/…" required autofocus
+             aria-label="Link-ul jobului">
+      <button type="submit" class="btn-primary">Extrage</button>
+    </div>
+  </form>
+
+  {% if jobs %}
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Titlu</th><th>Companie</th><th>Locație</th><th>Email HR</th>
+          <th>Salariu</th><th>Status</th><th>Găsit</th><th aria-label="Acțiuni"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td><a href="{% url 'job_detail' job.pk %}">{{ job.title|default:"(fără titlu)" }}</a></td>
+          <td>{{ job.company|default:"—" }}</td>
+          <td>{{ job.location|default:"—" }}</td>
+          <td class="mono">{{ job.email_hr|default:"—" }}</td>
+          <td class="num">{% if job.salary_min or job.salary_max %}{{ job.salary_min|default:"?" }}–{{ job.salary_max|default:"?" }}{% else %}<span class="dim">—</span>{% endif %}</td>
+          <td><span class="pill {{ job.extraction_status }}">{{ job.extraction_status }}</span></td>
+          <td class="dim num">{{ job.created_at|date:"d.m H:i" }}</td>
+          <td>
+            <form method="post" action="{% url 'delete_job' job.pk %}"
+                  onsubmit="return confirm('Ștergi acest rând?');">
+              {% csrf_token %}
+              <button type="submit" class="icon-btn" aria-label="Șterge {{ job.title|default:'rândul' }}" title="Șterge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                  <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                </svg>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">Niciun job încă. Lipește primul link mai sus.</div>
+  {% endif %}
+{% endblock %}
