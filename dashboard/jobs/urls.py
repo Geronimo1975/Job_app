@@ -9,5 +9,6 @@ urlpatterns = [
     path("job/<int:pk>/delete", views.delete_job, name="delete_job"),
     path("job/<int:pk>/push", views.push_job, name="push_job"),
     path("job/<int:pk>/send", views.send_job, name="send_job"),
+    path("job/<int:pk>/reset", views.reset_job, name="reset_job"),
     path("refresh", views.refresh_states_view, name="refresh_states"),
 ]

@@ -12,6 +12,10 @@
     <div class="banner dry"><strong>Mod poll: {{ mode }}</strong> — emailul NU pleacă real (dry-run) până nu rulezi poll-ul cu --live.</div>
   {% endif %}
 
+  {% for b in blockers %}
+    <div class="banner live">{{ b }}</div>
+  {% endfor %}
+
   <div class="table-scroll">
     <table>
       <thead><tr><th>Coloană Sheet</th><th>Valoare</th></tr></thead>
@@ -24,9 +28,13 @@
   </div>
 
   <div class="actions">
+    {% if not blockers %}
     <form method="post" action="{% url 'send_job' job.pk %}">
-      {% csrf_token %}<button type="submit" class="btn-danger">Confirmă trimiterea</button>
+      {% csrf_token %}
+      <input type="hidden" name="row_hash" value="{{ row_hash }}">
+      <button type="submit" class="btn-danger">Confirmă trimiterea</button>
     </form>
+    {% endif %}
     <a href="{% url 'job_detail' job.pk %}"><button type="button" class="btn-secondary">Înapoi</button></a>
   </div>
 {% endblock %}

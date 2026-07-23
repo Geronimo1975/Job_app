@@ -7,13 +7,19 @@ import os
 from pathlib import Path
 
 import yaml
+from django.utils import timezone
 
 from sender.n8n_client import N8nClient
 from sender.n8n_mapping import job_to_sheet_row
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SETTINGS = _REPO_ROOT / "config" / "settings.yaml"
-_POLL_PLIST = _REPO_ROOT / "scripts" / "com.jobapp.poll.plist"
+# Job-ul launchd EFECTIV rulează dintr-o copie instalată în ~/Library/LaunchAgents,
+# nu din repo — o verificăm pe aceea întâi, altfel bannerul LIVE/dry-run ar minți.
+_POLL_PLIST_CANDIDATES = [
+    Path.home() / "Library" / "LaunchAgents" / "com.jobapp.poll.plist",
+    _REPO_ROOT / "scripts" / "com.jobapp.poll.plist",
+]
 
 
 def load_pipeline_config() -> dict:
@@ -37,7 +43,10 @@ def job_to_internal(job, sende_befehl: str | None = None) -> dict:
         "email_hr": job.email_hr,
         "contact_person": job.contact_person,
         "language": job.language,
-        "gefunden_am": job.created_at.strftime("%Y-%m-%d") if job.created_at else "",
+        # Data locală (Europe/Berlin), nu UTC — altfel „Datum gefunden" poate
+        # ieși cu o zi în urmă pentru joburile adăugate după miezul nopții.
+        "gefunden_am": timezone.localtime(job.created_at).strftime("%Y-%m-%d")
+        if job.created_at else "",
         "notizen": job.notizen,
         "match_score": job.match_score,
     }
@@ -64,6 +73,10 @@ def _client_or_error(cfg: dict) -> tuple[N8nClient | None, str]:
 
 def push_to_sheet(job, senden: bool) -> dict:
     """Upsert în Sheet; cu senden=True scrie și col P „Sende Befehl"=SENDEN."""
+    # Fără Apply URL nu există cheie de match: clientul ar arunca rândul
+    # silențios și am raporta fals succes.
+    if not str(job.url or "").strip():
+        return {"ok": False, "error": "jobul nu are Apply URL — fără cheie de match, upsert-ul e imposibil."}
     try:
         cfg = load_pipeline_config()
     except Exception as e:
@@ -80,21 +93,38 @@ def push_to_sheet(job, senden: bool) -> dict:
 
 
 def poll_mode() -> str:
-    """Modul poll-ului launchd: LIVE dacă plist-ul conține --live."""
-    try:
-        content = _POLL_PLIST.read_text(encoding="utf-8")
-    except OSError:
-        return "necunoscut (dry-run implicit)"
-    return "LIVE" if "--live" in content else "dry-run"
+    """Modul poll-ului: LIVE dacă ORICARE plist (instalat sau repo) conține --live.
+
+    Preferăm avertismentul fals-pozitiv (LIVE deși nu e) unui fals-negativ
+    („dry-run" în timp ce poll-ul instalat chiar trimite emailuri reale).
+    """
+    found_any = False
+    for plist in _POLL_PLIST_CANDIDATES:
+        try:
+            content = plist.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        found_any = True
+        if "--live" in content:
+            return "LIVE"
+    return "dry-run" if found_any else "necunoscut (dry-run implicit)"
 
 
 def refresh_states(jobs_qs) -> int:
-    """Deducție din pending: rândurile senden_pushed absente din pending → processed.
+    """Actualizează stările senden_pushed din pending. Întoarce câte s-au schimbat.
+
+    „Absent din pending" înseamnă „procesat" DOAR pentru rânduri văzute măcar
+    o dată în pending. Un rând împins dar NICIODATĂ văzut e blocat de filtrul
+    isSent din n8n (rând deja trimis) sau șters/editat în Sheet → stare
+    distinctă „unconfirmed", nu un fals „processed".
 
     Ridică RuntimeError dacă n8n e indisponibil/dezactivat — un pending gol
     fals ar marca totul „processed".
     """
-    cfg = load_pipeline_config()
+    try:
+        cfg = load_pipeline_config()
+    except Exception as e:
+        raise RuntimeError(f"config necititbil: {e}") from e
     client, err = _client_or_error(cfg)
     if client is None:
         raise RuntimeError(err)
@@ -103,8 +133,16 @@ def refresh_states(jobs_qs) -> int:
     }
     changed = 0
     for job in jobs_qs.filter(send_state="senden_pushed"):
-        if job.url.strip() not in pending_urls:
+        if job.url.strip() in pending_urls:
+            if not job.seen_in_pending:
+                job.seen_in_pending = True
+                job.save(update_fields=["seen_in_pending"])
+        elif job.seen_in_pending:
             job.send_state = "processed"
+            job.save(update_fields=["send_state"])
+            changed += 1
+        else:
+            job.send_state = "unconfirmed"
             job.save(update_fields=["send_state"])
             changed += 1
     return changed

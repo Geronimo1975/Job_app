@@ -57,6 +57,11 @@
       </tbody>
     </table>
   </div>
+  <p class="sub" style="margin-top:12px;">
+    Stări trimitere: <strong>senden_pushed</strong> = SENDEN împins, în așteptarea poll-ului ·
+    <strong>processed</strong> = dedus din pending — verifică „Email Status” în Sheet pentru confirmare ·
+    <strong>unconfirmed</strong> = n-a apărut niciodată în pending (posibil rând deja trimis sau șters) — verifică Sheet-ul.
+  </p>
   {% else %}
   <div class="empty">Niciun job încă. Lipește primul link mai sus.</div>
   {% endif %}

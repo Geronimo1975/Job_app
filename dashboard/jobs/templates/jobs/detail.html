@@ -34,6 +34,11 @@
       {% csrf_token %}<button type="submit" class="btn-secondary">Salvează în Sheet</button>
     </form>
     <a href="{% url 'send_job' job.pk %}"><button type="button" class="btn-primary">Trimite (SENDEN)…</button></a>
+    {% if job.send_state != "draft" %}
+    <form method="post" action="{% url 'reset_job' job.pk %}">
+      {% csrf_token %}<button type="submit" class="btn-secondary">Resetează starea (draft)</button>
+    </form>
+    {% endif %}
   </div>
 
   <h3>Descriere (doar local)</h3>

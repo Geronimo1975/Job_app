@@ -24,9 +24,14 @@ class Job(models.Model):
     # Extragerea AI brută + eventuale mesaje de eroare, pentru debug.
     raw_json = models.JSONField(default=dict, blank=True)
     # Starea locală a fluxului de trimitere prin Sheet:
-    # draft → senden_pushed (SENDEN împins) → processed (dedus din pending).
+    # draft → senden_pushed (SENDEN împins) → processed (dedus din pending)
+    #                                       ↘ unconfirmed (niciodată văzut în pending).
     send_state = models.CharField(max_length=20, default="draft")
     sheet_pushed_at = models.DateTimeField(null=True, blank=True)
+    # A apărut vreodată în pending după push? „Absent din pending" înseamnă
+    # „procesat" DOAR dacă a fost văzut măcar o dată (altfel e blocat de
+    # filtrul isSent din n8n sau șters din Sheet).
+    seen_in_pending = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
