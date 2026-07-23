@@ -103,6 +103,9 @@ class EmailAgent(BaseAgent):
                     status_text = "DRY RUN" if dry_run else "GESENDET"
                     self.logger.info(f"  ✅ {status_text}: {company}")
                     sent_results.append({
+                        # „url" e cheia de corelare folosită de run_poll ca să
+                        # marcheze în Sheet DOAR rândurile chiar trimise.
+                        "url": job.get("url", ""),
                         "company": company,
                         "position": position,
                         "email": to_email,

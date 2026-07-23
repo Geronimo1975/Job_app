@@ -54,7 +54,15 @@ class N8nClient:
             # Nimic de trimis — evităm un request inutil (webhook-ul n8n nu
             # returnează body când nu există rânduri de procesat).
             return {"ok": True, "skipped": True, "upserted": 0}
-        rows = [job_to_sheet_row(j) for j in jobs]
+        # „Apply URL" e `matchingColumns` în nodul appendOrUpdate: fără ea n8n
+        # nu are pe ce face match, cade pe ramura de append și adaugă un rând
+        # nou gol la fiecare push.
+        rows = [r for r in (job_to_sheet_row(j) for j in jobs) if r.get("Apply URL")]
+        skipped = len(jobs) - len(rows)
+        if skipped:
+            print(f"  ⚠ {skipped} joburi fără Apply URL — omise la upsert (nu au cheie de match).")
+        if not rows:
+            return {"ok": True, "skipped": True, "upserted": 0}
         return self._post("ingest", {"event": "jobs_upsert", "jobs": rows})
 
     def get_pending(self) -> list[dict]:

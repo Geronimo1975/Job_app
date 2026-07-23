@@ -1,6 +1,8 @@
 {
   "name": "JobApp Ingest",
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "nodes": [
     {
       "parameters": {
@@ -14,9 +16,17 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [260, 300],
+      "position": [
+        260,
+        300
+      ],
       "webhookId": "jobapp-ingest",
-      "credentials": { "httpHeaderAuth": { "id": "Ko0T1HawgzBeFN0s", "name": "JobApp Webhook Secret" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ko0T1HawgzBeFN0s",
+          "name": "JobApp Webhook Secret"
+        }
+      }
     },
     {
       "parameters": {
@@ -26,25 +36,47 @@
       "name": "Validate & Expand",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [480, 300]
+      "position": [
+        480,
+        300
+      ]
     },
     {
       "parameters": {
         "operation": "appendOrUpdate",
-        "documentId": { "__rl": true, "mode": "id", "value": "1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M" },
-        "sheetName": { "__rl": true, "mode": "name", "value": "Bewerbungen" },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bewerbungen"
+        },
         "columns": {
           "mappingMode": "autoMapInputData",
-          "matchingColumns": ["Apply URL"]
+          "matchingColumns": [
+            "Apply URL"
+          ]
         },
-        "options": {}
+        "options": {},
+        "authentication": "serviceAccount"
       },
       "id": "gs-upsert",
       "name": "Write to Google Sheets",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [700, 300],
-      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "D1jIVLCWwpVV1Y3U",
+          "name": "JobApp Service Account (get-hub)"
+        }
+      }
     },
     {
       "parameters": {
@@ -55,12 +87,45 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [920, 300]
+      "position": [
+        920,
+        300
+      ]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Validate & Expand", "type": "main", "index": 0 }]] },
-    "Validate & Expand": { "main": [[{ "node": "Write to Google Sheets", "type": "main", "index": 0 }]] },
-    "Write to Google Sheets": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Expand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Expand": {
+      "main": [
+        [
+          {
+            "node": "Write to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   }
 }

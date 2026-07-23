@@ -1,6 +1,8 @@
 {
   "name": "JobApp Pending",
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "nodes": [
     {
       "parameters": {
@@ -14,46 +16,112 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [260, 300],
+      "position": [
+        260,
+        300
+      ],
       "webhookId": "jobapp-pending",
-      "credentials": { "httpHeaderAuth": { "id": "Ko0T1HawgzBeFN0s", "name": "JobApp Webhook Secret" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ko0T1HawgzBeFN0s",
+          "name": "JobApp Webhook Secret"
+        }
+      }
     },
     {
       "parameters": {
         "operation": "read",
-        "documentId": { "__rl": true, "mode": "id", "value": "1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M" },
-        "sheetName": { "__rl": true, "mode": "name", "value": "Bewerbungen" },
-        "options": {}
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1fTjvs6GEYTzfwuOVsoJh-KAWW3EAB_bxV3m7UM1WM6M"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bewerbungen"
+        },
+        "options": {
+          "range": "Bewerbungen!A1:AB"
+        },
+        "authentication": "serviceAccount"
       },
       "id": "gs-read",
       "name": "Read Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [660, 300],
-      "credentials": { "googleSheetsOAuth2Api": { "id": "lwLv81Aaab8h0Zm3", "name": "Google Sheets account" } }
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "D1jIVLCWwpVV1Y3U",
+          "name": "JobApp Service Account (get-hub)"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const rows = items.map(i => i.json);\nconst pending = rows.filter(r => String(r['Sende Befehl']||'').toUpperCase()==='SENDEN' && String(r['Email Status']||'').toUpperCase()!=='GESENDET');\nconst commands = pending.map(r => ({ action: 'send', 'Apply URL': r['Apply URL'], Firma: r['Firma'], Position: r['Position'], 'Kontakt Email': r['Kontakt Email'], Sprache: r['Sprache'], 'Anschreiben PDF': r['Anschreiben PDF'], 'Email Status': r['Email Status'] }));\nreturn [{ json: { ok: true, commands } }];"
+        "jsCode": "const rows = items.map(i => i.json);\n\n// „Deja trimis\" are DOUA forme in Sheet, pentru ca doua sisteme scriu col R:\n//   - Sistemul A (Apps Script -> FastAPI) scrie 'sent'\n//   - Sistemul B (--step poll)          scrie 'GESENDET'\n// Daca recunoastem doar una, un rand deja aplicat e retrimis de celalalt sistem.\nconst SENT = ['GESENDET', 'SENT', 'DRY_RUN'];\nconst isSent = r => SENT.includes(String(r['Email Status'] || '').trim().toUpperCase());\n\nconst pending = rows.filter(r =>\n  String(r['Sende Befehl'] || '').trim().toUpperCase() === 'SENDEN' && !isSent(r)\n);\n\n// Proiectie explicita — agentii din pipeline au nevoie si de Standort/Kontakt\n// Person/Datum gefunden, altfel Anschreiben-ul se genereaza fara ele.\nconst commands = pending.map(r => ({\n  action: 'send',\n  'Apply URL': r['Apply URL'],\n  Firma: r['Firma'],\n  Position: r['Position'],\n  Standort: r['Standort'],\n  'Kontakt Email': r['Kontakt Email'],\n  'Kontakt Person': r['Kontakt Person'],\n  Sprache: r['Sprache'],\n  Quelle: r['Quelle'],\n  'Datum gefunden': r['Datum gefunden'],\n  'Anschreiben PDF': r['Anschreiben PDF'],\n  'Email Status': r['Email Status'],\n}));\n\nreturn [{ json: { ok: true, commands } }];"
       },
       "id": "code-filter",
       "name": "Filter SENDEN",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [860, 300]
+      "position": [
+        860,
+        300
+      ]
     },
     {
-      "parameters": { "respondWith": "json", "responseBody": "={{ $json }}" },
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
       "id": "respond-pending",
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1060, 300]
+      "position": [
+        1060,
+        300
+      ]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Read Sheet", "type": "main", "index": 0 }]] },
-    "Read Sheet": { "main": [[{ "node": "Filter SENDEN", "type": "main", "index": 0 }]] },
-    "Filter SENDEN": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sheet": {
+      "main": [
+        [
+          {
+            "node": "Filter SENDEN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter SENDEN": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   }
 }

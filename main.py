@@ -305,11 +305,16 @@ def run_poll(args) -> list:
     results.append(pending)
 
     commands = pending.data.get("commands", [])
-    # Filtrează defensiv joburile deja trimise
+    # Filtrează defensiv joburile deja trimise. „Deja trimis" are mai multe
+    # forme, pentru că două sisteme scriu col R „Email Status": Apps
+    # Script→FastAPI scrie `sent`, iar `--step poll` scrie `GESENDET`.
+    # Recunoașterea unei singure forme ducea la retrimiterea unei aplicații
+    # deja făcute de celălalt sistem.
+    already_sent = {"GESENDET", "SENT", "DRY_RUN"}
     jobs = [
         sheet_row_to_job(c)
         for c in commands
-        if str(c.get("Email Status", "")).upper() != "GESENDET"
+        if str(c.get("Email Status", "")).strip().upper() not in already_sent
     ]
 
     # Propagă limba (Sprache) acolo unde o citesc agenții (analysis.language)
@@ -323,15 +328,19 @@ def run_poll(args) -> list:
 
     print(f"  📥 {len(jobs)} comenzi SENDEN de procesat.")
 
-    # Generează Anschreiben pentru joburile fără cover_letter
-    needs_letter = [j for j in jobs if not j.get("cover_letter")]
-    if needs_letter:
-        cl = CoverLetterAgent()
-        cl_res = cl.run(jobs=needs_letter)
-        print_result(cl_res)
-        results.append(cl_res)
-        if cl_res.status != AgentStatus.FAILED:
-            jobs = cl_res.data.get("jobs_with_letters", jobs)
+    # Generează Anschreiben pentru joburile fără cover_letter.
+    # Col O „Anschreiben PDF" conține un LINK Drive, nu textul scrisorii, deci
+    # prezența ei NU înseamnă că avem un Anschreiben de trimis — regenerăm
+    # pentru tot lotul. Rezultatul se împerechează pe „url", nu prin
+    # înlocuirea listei: `jobs_with_letters` conține doar subsetul trimis
+    # agentului, iar atribuirea directă ștergea restul joburilor din lot.
+    cl = CoverLetterAgent()
+    cl_res = cl.run(jobs=jobs)
+    print_result(cl_res)
+    results.append(cl_res)
+    if cl_res.status != AgentStatus.FAILED:
+        by_url = {j.get("url"): j for j in cl_res.data.get("jobs_with_letters", [])}
+        jobs = [by_url.get(j.get("url"), j) for j in jobs]
 
     # Trimite emailuri
     em = EmailAgent()
@@ -339,15 +348,34 @@ def run_poll(args) -> list:
     print_result(em_res)
     results.append(em_res)
 
-    # Marchează status și push înapoi la n8n
+    # Marchează status și push înapoi la n8n.
+    # În dry-run NU scriem nimic în Sheet: altfel un tick de poll ar marca
+    # rândul ca procesat fără să fi plecat vreun email.
+    if dry_run:
+        print("  ⬜ Dry-run — nu scriu înapoi în Sheet (folosește --live).")
+        return results
+
     if em_res.status != AgentStatus.FAILED:
+        sent_urls = {s.get("url") for s in em_res.data.get("sent", []) if s.get("url")}
+        marked = 0
         for job in jobs:
-            job["status"] = "GESENDET" if not dry_run else job.get("status", "Bereit")
-            job["email_status"] = "GESENDET" if not dry_run else "DRY_RUN"
-            job["gesendet_am"] = datetime.now().strftime("%Y-%m-%d") if not dry_run else ""
-        push = n8n.run(action="push", jobs=jobs)
-        print_result(push)
-        results.append(push)
+            if job.get("url") not in sent_urls:
+                continue  # email sărit (fără Kontakt Email) sau eșuat — nu marca
+            # Col M „Status" aparține mașinii de stări a Apps Script
+            # (plan→send→running→done/error) — nu o atingem din poll.
+            job["email_status"] = "GESENDET"
+            job["gesendet_am"] = datetime.now().strftime("%Y-%m-%d")
+            job["sende_befehl"] = ""  # consumă trigger-ul din col P
+            marked += 1
+        if marked:
+            push = n8n.run(action="push", jobs=jobs)
+            print_result(push)
+            results.append(push)
+            if push.status != AgentStatus.SUCCESS:
+                print("  ⚠ Push eșuat — col P/R NU au fost actualizate; "
+                      "următorul poll VA RETRIMITE. Repară n8n înainte de următorul tick.")
+        else:
+            print("  ⬜ Niciun email trimis efectiv — nimic de marcat în Sheet.")
 
     return results
 

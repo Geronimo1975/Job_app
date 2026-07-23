@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(source .venv/bin/activate:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(ls:*)",
+      "Bash(python3 main.py --step report:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(rm -rf:*)"
+    ],
+    "ask": [
+      "Bash(python3 main.py:*)",
+      "Bash(python3 scripts/deploy_n8n_workflows.py:*)",
+      "Bash(python3 scripts/test_e2e_manual.py:*)"
+    ]
+  }
+}
