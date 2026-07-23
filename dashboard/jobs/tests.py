@@ -93,6 +93,30 @@ class ExtractorTests(SimpleTestCase):
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
     @patch("jobs.extractor.anthropic.Anthropic")
     @patch("jobs.extractor.httpx.get")
+    def test_salary_float_is_not_mangled(self, mock_get, mock_anthropic):
+        # 60000.0 nu trebuie să devină 600000 (regex-ul pe str ar scoate punctul)
+        mock_get.return_value = _mock_http("<html>x</html>")
+        mock_anthropic.return_value = _mock_anthropic(
+            '{"title": "X", "salary_min": 60000.0, "salary_max": 65000.5}'
+        )
+        result = extractor.extract_job("https://acme.de/jobs/10")
+        self.assertEqual(result["salary_min"], 60000)
+        self.assertEqual(result["salary_max"], 65000)
+
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
+    @patch("jobs.extractor.anthropic.Anthropic")
+    @patch("jobs.extractor.httpx.get")
+    def test_non_object_json_is_partial(self, mock_get, mock_anthropic):
+        # JSON valid dar non-obiect (listă) = extragere neutilizabilă → partial, nu ok
+        mock_get.return_value = _mock_http("<html>x</html>")
+        mock_anthropic.return_value = _mock_anthropic('[{"title": "X"}]')
+        result = extractor.extract_job("https://acme.de/jobs/11")
+        self.assertEqual(result["extraction_status"], "partial")
+        self.assertEqual(result["title"], "")
+
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
+    @patch("jobs.extractor.anthropic.Anthropic")
+    @patch("jobs.extractor.httpx.get")
     def test_non_json_ai_response_is_partial(self, mock_get, mock_anthropic):
         mock_get.return_value = _mock_http("<html>x</html>")
         mock_anthropic.return_value = _mock_anthropic("Îmi pare rău, nu pot extrage.")
@@ -146,6 +170,25 @@ class ViewTests(TestCase):
         self.client.post(reverse("add_job"), {"url": url})
         self.assertEqual(Job.objects.count(), 1)
         self.assertEqual(Job.objects.get().title, "Senior Python Dev")
+
+    @patch("jobs.views.extract_job")
+    def test_failed_reextraction_keeps_existing_data(self, mock_extract):
+        # Eroare tranzitorie la re-lipirea aceluiași URL NU șterge datele bune salvate
+        url = "https://acme.de/jobs/1"
+        mock_extract.return_value = _ok_extraction(url)
+        self.client.post(reverse("add_job"), {"url": url})
+        failed = {
+            "url": url, "title": "", "company": "", "location": "", "description": "",
+            "email_hr": "", "salary_min": None, "salary_max": None, "language": "",
+            "date_posted": "", "source": "dashboard", "extraction_status": "error",
+            "raw_json": {"error": "fetch eșuat: timeout"},
+        }
+        mock_extract.return_value = failed
+        self.client.post(reverse("add_job"), {"url": url})
+        self.assertEqual(Job.objects.count(), 1)
+        job = Job.objects.get()
+        self.assertEqual(job.title, "Python Dev")          # datele vechi păstrate
+        self.assertEqual(job.extraction_status, "ok")      # statusul bun neatins
 
     def test_invalid_url_rejected(self):
         # fără follow: nu randăm index.html (nu există până la Task 5)

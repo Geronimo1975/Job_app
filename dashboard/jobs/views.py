@@ -24,10 +24,18 @@ def add_job(request):
         return redirect("index")
 
     data = extract_job(url)
+    status = data["extraction_status"]
+
+    # Extragere eșuată pe un URL deja salvat: NU suprascrie datele bune cu goluri
+    # (o eroare tranzitorie de rețea nu trebuie să șteargă un rând extras corect).
+    if status != "ok" and Job.objects.filter(url=url).exists():
+        err = (data.get("raw_json") or {}).get("error", "AI n-a întors JSON valid")
+        messages.error(request, f"Extragere eșuată ({err}) — rândul existent a fost păstrat.")
+        return redirect("index")
+
     defaults = {k: v for k, v in data.items() if k != "url"}
     job, created = Job.objects.update_or_create(url=url, defaults=defaults)
 
-    status = data["extraction_status"]
     if status == "ok":
         verb = "Adăugat" if created else "Actualizat"
         messages.success(request, f"{verb}: {job.title or url}")

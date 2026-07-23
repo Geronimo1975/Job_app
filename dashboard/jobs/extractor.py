@@ -96,11 +96,12 @@ def _call_ai(page_text: str) -> str:
 
 
 def _coerce_int(value):
-    """Convertește '60.000 €' / '60000' / 60000 → int; altfel None."""
-    if value is None:
+    """Convertește '60.000 €' / 60000.0 / 60000 → int; altfel None."""
+    if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, int):
-        return value
+    # float-ul NU trece prin regex: str(60000.0)='60000.0' ar pierde punctul → 600000
+    if isinstance(value, (int, float)):
+        return int(value)
     digits = re.sub(r"[^\d]", "", str(value))
     return int(digits) if digits else None
 
@@ -127,7 +128,9 @@ def extract_job(url: str) -> dict:
     except json.JSONDecodeError:
         return _blank_result(url, "partial", {"raw": raw_text})
 
-    result = _blank_result(url, "ok", data if isinstance(data, dict) else {"raw": data})
+    # JSON valid dar non-obiect (listă/număr) = neutilizabil → partial, nu ok
+    status = "ok" if isinstance(data, dict) else "partial"
+    result = _blank_result(url, status, data if isinstance(data, dict) else {"raw": data})
     if isinstance(data, dict):
         for field in _STRING_FIELDS:
             if data.get(field) is not None:
