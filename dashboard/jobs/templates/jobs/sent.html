@@ -1,0 +1,29 @@
+{% extends "jobs/base.html" %}
+{% block title %}Trimise — Job Dashboard{% endblock %}
+{% block content %}
+  <h1>Trimise</h1>
+  <p class="sub">Aplicațiile trimise din dashboard (LIVE). Sheet-ul are „Email Status”=GESENDET pentru fiecare.</p>
+
+  {% if jobs %}
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Titlu</th><th>Companie</th><th>Către</th><th>Trimis la</th><th>Atașamente</th></tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td><a href="{% url 'preview_job' job.pk %}">{{ job.title|default:"(fără titlu)" }}</a></td>
+          <td>{{ job.company|default:"—" }}</td>
+          <td class="mono">{{ job.email_hr|default:"—" }}</td>
+          <td class="dim num">{{ job.sent_at|date:"d.m.Y H:i" }}</td>
+          <td class="num">{{ job.attachments_json|length }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">Nimic trimis încă. Fluxul: Joburi → Execută → Preview → Transmite (LIVE).</div>
+  {% endif %}
+{% endblock %}

@@ -14,18 +14,13 @@
     </div>
   </form>
 
-  <form method="post" action="{% url 'refresh_states' %}" style="margin:0 0 16px;">
-    {% csrf_token %}
-    <button type="submit" class="btn-secondary">Actualizează starea trimiterilor</button>
-  </form>
-
   {% if jobs %}
   <div class="table-scroll">
     <table>
       <thead>
         <tr>
-          <th>Titlu</th><th>Companie</th><th>Locație</th><th>Email HR</th>
-          <th>Salariu</th><th>Status</th><th>Trimitere</th><th>Găsit</th><th aria-label="Acțiuni"></th>
+          <th>Titlu</th><th>Companie</th><th>Email HR</th>
+          <th>Status</th><th>Trimitere</th><th>Acțiuni</th><th>Găsit</th><th aria-label="Șterge"></th>
         </tr>
       </thead>
       <tbody>
@@ -33,11 +28,25 @@
         <tr>
           <td><a href="{% url 'job_detail' job.pk %}">{{ job.title|default:"(fără titlu)" }}</a></td>
           <td>{{ job.company|default:"—" }}</td>
-          <td>{{ job.location|default:"—" }}</td>
           <td class="mono">{{ job.email_hr|default:"—" }}</td>
-          <td class="num">{% if job.salary_min or job.salary_max %}{{ job.salary_min|default:"?" }}–{{ job.salary_max|default:"?" }}{% else %}<span class="dim">—</span>{% endif %}</td>
           <td><span class="pill {{ job.extraction_status }}">{{ job.extraction_status }}</span></td>
-          <td><span class="pill {{ job.send_state }}">{{ job.send_state }}</span></td>
+          <td><span class="pill {{ job.send_state }}"{% if job.send_error %} title="{{ job.send_error }}"{% endif %}>{{ job.send_state }}</span></td>
+          <td>
+            <div class="row-actions">
+              {% if job.send_state == "draft" or job.send_state == "error" %}
+                <form method="post" action="{% url 'execute_job' job.pk %}">
+                  {% csrf_token %}
+                  <button type="submit" class="btn-secondary btn-small"
+                          onclick="this.disabled=true;this.textContent='Generez…';this.form.submit()">Execută</button>
+                </form>
+              {% elif job.send_state == "generated" %}
+                <a href="{% url 'preview_job' job.pk %}">Preview</a>
+                <a href="{% url 'transmit_job' job.pk %}">Transmite</a>
+              {% elif job.send_state == "sent" %}
+                <a href="{% url 'preview_job' job.pk %}">Vezi</a>
+              {% endif %}
+            </div>
+          </td>
           <td class="dim num">{{ job.created_at|date:"d.m H:i" }}</td>
           <td>
             <form method="post" action="{% url 'delete_job' job.pk %}"
@@ -58,9 +67,10 @@
     </table>
   </div>
   <p class="sub" style="margin-top:12px;">
-    Stări trimitere: <strong>senden_pushed</strong> = SENDEN împins, în așteptarea poll-ului ·
-    <strong>processed</strong> = dedus din pending — verifică „Email Status” în Sheet pentru confirmare ·
-    <strong>unconfirmed</strong> = n-a apărut niciodată în pending (posibil rând deja trimis sau șters) — verifică Sheet-ul.
+    Flux: <strong>draft</strong> → „Execută” generează emailul + Anschreiben-ul ·
+    <strong>generated</strong> → Preview (vezi/editezi) apoi Transmite ·
+    <strong>sent</strong> = trimis (GESENDET scris în Sheet) ·
+    <strong>error</strong> = eșec — ține cursorul pe pastilă pentru motiv, apoi re-Execută.
   </p>
   {% else %}
   <div class="empty">Niciun job încă. Lipește primul link mai sus.</div>

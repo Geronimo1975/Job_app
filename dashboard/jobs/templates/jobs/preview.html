@@ -1,0 +1,73 @@
+{% extends "jobs/base.html" %}
+{% block title %}Preview — {{ job.title|default:"Job" }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'index' %}">← Înapoi la Joburi</a></p>
+  <h1>Preview: {{ job.title|default:"(fără titlu)" }} @ {{ job.company|default:"—" }}</h1>
+  <p class="sub">
+    <span class="pill {{ job.send_state }}">{{ job.send_state }}</span>
+    {% if job.generated_at %} · generat {{ job.generated_at|date:"d.m.Y H:i" }}{% endif %}
+    {% if job.sent_at %} · trimis {{ job.sent_at|date:"d.m.Y H:i" }}{% endif %}
+  </p>
+
+  {% if not job.email_hr %}
+    <div class="banner live">Jobul nu are Kontakt Email — completează-l în
+      <a href="{% url 'job_detail' job.pk %}">pagina jobului</a> înainte de transmitere.</div>
+  {% endif %}
+
+  <form method="post" action="{% url 'preview_job' job.pk %}">
+    {% csrf_token %}
+    <div class="field" style="margin-bottom:14px;">
+      <label>Către</label>
+      <input type="text" value="{{ job.email_hr|default:'(lipsește)' }}" readonly
+             class="mono" aria-readonly="true" style="opacity:.8;">
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label for="id_email_subject">Subiect</label>
+      <input type="text" id="id_email_subject" name="email_subject" value="{{ job.email_subject }}">
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label for="id_email_body">Body email (editabil)</label>
+      <textarea id="id_email_body" name="email_body" class="big">{{ job.email_body }}</textarea>
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label for="id_anschreiben_text">Anschreiben (editabil — PDF-ul se reface la salvare)</label>
+      <textarea id="id_anschreiben_text" name="anschreiben_text" class="big"
+                style="min-height:320px;">{{ job.anschreiben_text }}</textarea>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn-primary">Salvează editările</button>
+    </div>
+  </form>
+
+  <h3>Atașamente ({{ attachments|length }})</h3>
+  {% if attachments %}
+  <ul style="list-style:none;padding:0;margin:0 0 18px;">
+    {% for a in attachments %}
+    <li style="padding:8px 0;border-bottom:1px solid var(--border);">
+      {% if a.exists %}
+        <a href="{% url 'serve_attachment' job.pk a.idx %}" target="_blank" rel="noopener" class="mono">{{ a.name }}</a>
+      {% else %}
+        <span class="mono" style="color:var(--err);">{{ a.name }} — fișier lipsă pe disc!</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="sub">Niciun atașament colectat.</p>
+  {% endif %}
+
+  <div class="actions">
+    {% if job.send_state == "generated" %}
+      <a href="{% url 'transmit_job' job.pk %}"><button type="button" class="btn-primary">Transmite…</button></a>
+    {% endif %}
+    {% if job.send_state != "sent" %}
+      <form method="post" action="{% url 'execute_job' job.pk %}"
+            onsubmit="return confirm('Regenerezi cu AI? Editările manuale se pierd.');">
+        {% csrf_token %}
+        <button type="submit" class="btn-secondary"
+                onclick="this.textContent='Regenerez…'">Re-execută (regenerare AI)</button>
+      </form>
+    {% endif %}
+    <a href="{% url 'job_detail' job.pk %}"><button type="button" class="btn-secondary">Detalii job</button></a>
+  </div>
+{% endblock %}

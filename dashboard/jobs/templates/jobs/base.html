@@ -20,7 +20,18 @@
       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
       -webkit-font-smoothing:antialiased;
     }
-    .wrap { max-width:1080px; margin:0 auto; padding:40px 20px 64px; }
+    /* Layout cu meniu lateral */
+    .layout { display:flex; min-height:100dvh; }
+    .side { width:200px; flex-shrink:0; background:var(--surface);
+            border-right:1px solid var(--border); padding:24px 14px; }
+    .brand { font-weight:700; font-size:15px; margin-bottom:22px; padding:0 12px; }
+    .nav-link { display:block; padding:11px 12px; border-radius:8px; color:var(--muted);
+                margin-bottom:4px; font-weight:500;
+                transition:background var(--dur) ease, color var(--dur) ease; }
+    .nav-link:hover { color:var(--fg); text-decoration:none; }
+    .nav-link.active { background:var(--surface-2); color:var(--fg); }
+    .nav-link:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .wrap { flex:1; max-width:1080px; margin:0 auto; padding:40px 20px 64px; min-width:0; }
     h1 { font-size:22px; font-weight:700; margin:0 0 4px; letter-spacing:-.01em; }
     h3 { font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase;
          letter-spacing:.06em; margin:28px 0 10px; }
@@ -113,17 +124,33 @@
                      border:1px solid var(--border-strong); font-weight:600; }
     .btn-secondary:hover { border-color:var(--accent); }
     .btn-danger { padding:11px 16px; background:var(--err); color:#fff; font-weight:600; }
-    /* Badge stare trimitere */
+    /* Badge stare trimitere: draft → generated → sent (+ error) */
     .pill.draft { background:rgba(148,163,184,.15); color:var(--muted); }
-    .pill.senden_pushed { background:rgba(245,158,11,.15); color:var(--warn); }
-    .pill.processed { background:rgba(34,197,94,.15); color:var(--ok); }
-    .pill.unconfirmed { background:rgba(239,68,68,.15); color:var(--err); }
-    /* Banner mod poll */
+    .pill.generated { background:rgba(76,139,245,.18); color:#7ea6f7; }
+    .pill.sent { background:rgba(34,197,94,.15); color:var(--ok); }
+    /* Bannere de avertizare (confirmare transmitere) */
     .banner { padding:12px 16px; border-radius:var(--radius); margin:0 0 18px; font-size:14px;
               border:1px solid; }
     .banner.live { background:rgba(239,68,68,.1); color:var(--err); border-color:rgba(239,68,68,.35); }
     .banner.dry { background:rgba(245,158,11,.1); color:var(--warn); border-color:rgba(245,158,11,.35); }
+    /* Comutatorul LIVE */
+    .live-toggle { display:flex; align-items:center; gap:10px; padding:12px 14px; margin:0 0 14px;
+                   background:var(--surface); border:1px solid var(--border-strong);
+                   border-radius:var(--radius); cursor:pointer; font-size:14px; }
+    .live-toggle input { width:18px; height:18px; accent-color:var(--err); cursor:pointer; }
+    /* Textarea mari (preview editabil) */
+    .field textarea.big { min-height:220px; line-height:1.6; resize:vertical; }
+    .row-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .row-actions form { margin:0; }
+    .btn-small { padding:7px 12px; font-size:13px; }
 
+    @media (max-width:720px) {
+      .layout { flex-direction:column; }
+      .side { width:100%; display:flex; align-items:center; gap:6px;
+              border-right:0; border-bottom:1px solid var(--border); padding:12px 16px; }
+      .brand { margin:0 10px 0 0; }
+      .nav-link { margin:0; }
+    }
     @media (max-width:520px) {
       .add-row { flex-direction:column; }
       .btn-primary { width:100%; }
@@ -134,13 +161,22 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
-    {% if messages %}
-      <ul class="msgs" role="status" aria-live="polite">
-        {% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}
-      </ul>
-    {% endif %}
-    {% block content %}{% endblock %}
+  <div class="layout">
+    <nav class="side" aria-label="Meniu principal">
+      <div class="brand">Job Dashboard</div>
+      <a class="nav-link {% if section == 'jobs' %}active{% endif %}"
+         {% if section == 'jobs' %}aria-current="page"{% endif %} href="{% url 'index' %}">Joburi</a>
+      <a class="nav-link {% if section == 'sent' %}active{% endif %}"
+         {% if section == 'sent' %}aria-current="page"{% endif %} href="{% url 'sent_list' %}">Trimise</a>
+    </nav>
+    <main class="wrap">
+      {% if messages %}
+        <ul class="msgs" role="status" aria-live="polite">
+          {% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
   </div>
 </body>
 </html>

@@ -6,7 +6,7 @@
   <p class="sub">
     <span class="pill {{ job.extraction_status }}">{{ job.extraction_status }}</span>
     <span class="pill {{ job.send_state }}">{{ job.send_state }}</span>
-    {% if job.sheet_pushed_at %} · SENDEN împins: {{ job.sheet_pushed_at|date:"d.m.Y H:i" }}{% endif %}
+    {% if job.sent_at %} · trimis: {{ job.sent_at|date:"d.m.Y H:i" }}{% endif %}
   </p>
   <div class="meta">
     <span><strong>URL:</strong> <a href="{{ job.url }}" target="_blank" rel="noopener" class="mono">{{ job.url }}</a></span>
@@ -33,11 +33,16 @@
     <form method="post" action="{% url 'push_job' job.pk %}">
       {% csrf_token %}<button type="submit" class="btn-secondary">Salvează în Sheet</button>
     </form>
-    <a href="{% url 'send_job' job.pk %}"><button type="button" class="btn-primary">Trimite (SENDEN)…</button></a>
-    {% if job.send_state != "draft" %}
-    <form method="post" action="{% url 'reset_job' job.pk %}">
-      {% csrf_token %}<button type="submit" class="btn-secondary">Resetează starea (draft)</button>
-    </form>
+    {% if job.send_state == "generated" %}
+      <a href="{% url 'preview_job' job.pk %}"><button type="button" class="btn-primary">Preview…</button></a>
+    {% elif job.send_state == "sent" %}
+      <a href="{% url 'preview_job' job.pk %}"><button type="button" class="btn-secondary">Vezi pachetul trimis</button></a>
+    {% else %}
+      <form method="post" action="{% url 'execute_job' job.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-primary"
+                onclick="this.disabled=true;this.textContent='Generez…';this.form.submit()">Execută (generează pachetul)</button>
+      </form>
     {% endif %}
   </div>
 

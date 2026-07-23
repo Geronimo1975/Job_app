@@ -1,0 +1,43 @@
+{% extends "jobs/base.html" %}
+{% block title %}Transmite — {{ job.title|default:"Job" }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'preview_job' job.pk %}">← Înapoi la Preview</a></p>
+  <h1>Transmite aplicația</h1>
+  <p class="sub">Se trimite exact pachetul din Preview, prin SMTP-ul pipeline-ului
+     (rate-limit zilnic partajat). După un LIVE reușit, Sheet-ul primește
+     „Email Status”=GESENDET.</p>
+
+  {% if sheet_verdict == "da" %}
+    <div class="banner live"><strong>DEJA trimis conform Sheet-ului</strong> (done/sent/GESENDET pe acest URL) — trimiterea LIVE va fi blocată.</div>
+  {% elif "necunoscut" in sheet_verdict %}
+    <div class="banner dry"><strong>Verificarea Sheet-ului nu a mers</strong> ({{ sheet_verdict }}) — asigură-te manual că nu retrimiți.</div>
+  {% endif %}
+
+  <div class="table-scroll" style="margin-bottom:18px;">
+    <table>
+      <tbody>
+        <tr><td class="dim" style="width:160px;">Către</td><td class="mono">{{ job.email_hr|default:"(lipsește!)" }}</td></tr>
+        <tr><td class="dim">Subiect</td><td>{{ job.email_subject|default:"—" }}</td></tr>
+        <tr><td class="dim">Companie</td><td>{{ job.company|default:"—" }} · {{ job.title|default:"—" }}</td></tr>
+        <tr><td class="dim">Atașamente</td>
+            <td>{% if attachments %}
+                  {% for a in attachments %}
+                    {% if a.exists %}<a href="{% url 'serve_attachment' job.pk a.idx %}" target="_blank" rel="noopener" class="mono">{{ a.name }}</a>{% else %}<span style="color:var(--err);" class="mono">{{ a.name }} (lipsă!)</span>{% endif %}{% if not forloop.last %} · {% endif %}
+                  {% endfor %}
+                {% else %}<span class="dim">niciunul</span>{% endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" action="{% url 'transmit_job' job.pk %}">
+    {% csrf_token %}
+    <label class="live-toggle">
+      <input type="checkbox" name="live">
+      <span><strong>Trimite REAL (LIVE)</strong> — fără bifă rulează doar dry-run (simulare, nimic nu pleacă).</span>
+    </label>
+    <div class="actions">
+      <button type="submit" class="btn-danger">Transmite</button>
+      <a href="{% url 'preview_job' job.pk %}"><button type="button" class="btn-secondary">Înapoi</button></a>
+    </div>
+  </form>
+{% endblock %}
