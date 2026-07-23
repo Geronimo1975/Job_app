@@ -7,7 +7,9 @@ pentru că nimic nu se uita la Sheet.
 """
 
 import json
+import os
 import re
+import sys
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -71,7 +73,8 @@ class SeenIndex:
         """Încarcă indexul; un fișier corupt sau lipsă dă un index gol.
 
         Un index pierdut înseamnă doar că vezi din nou niște joburi vechi —
-        nu merită să oprească pipeline-ul.
+        nu merită să oprească pipeline-ul. Dar nu tăcem: pierderea intrărilor
+        `aplicat` duce la re-aplicare pe joburi la care s-a aplicat deja.
         """
         path = Path(path)
         if not path.exists():
@@ -79,7 +82,12 @@ class SeenIndex:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return cls(path, json.load(f))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as e:
+            print(
+                f"  ⚠ Index dedupe ilizibil ({path}): {e}. "
+                "Pornesc de la zero — joburile deja aplicate pot reapărea.",
+                file=sys.stderr,
+            )
             return cls(path)
 
     def __len__(self) -> int:
@@ -118,6 +126,11 @@ class SeenIndex:
 
         NU marchează nimic: decizia despre ce s-a întâmplat cu jobul aparține
         apelantului, care abia după prefiltru știe ce să scrie.
+
+        Eliminările pe cheia secundară (`firma|titlu`) se semnalează: acolo
+        pot apărea fals-pozitive — două posturi diferite la aceeași firmă cu
+        același titlu generic — spre deosebire de potrivirea pe URL, care e
+        sigură.
         """
         fresh: list[dict] = []
         batch_keys: set[str] = set()
@@ -126,13 +139,31 @@ class SeenIndex:
             if not keys:
                 continue
             if self.is_seen(job) or any(k in batch_keys for k in keys):
+                if not self._matched_by_url(job, batch_keys):
+                    print(
+                        f"  ⓘ Eliminat pe firmă+titlu (nu pe URL): "
+                        f"{job.get('company', '')} — {job.get('title', '')}",
+                        file=sys.stderr,
+                    )
                 continue
             batch_keys.update(keys)
             fresh.append(job)
         return fresh
 
+    def _matched_by_url(self, job: dict, batch_keys: set[str]) -> bool:
+        """True dacă jobul a fost eliminat pe cheia de URL (potrivire sigură)."""
+        key = url_key(job)
+        return bool(key) and (key in self.entries or key in batch_keys)
+
     def save(self) -> None:
-        """Scrie indexul pe disc, creând directorul dacă lipsește."""
+        """Scrie indexul pe disc, atomic.
+
+        Scrie într-un fișier temporar și abia apoi îl mută peste cel real:
+        `os.replace` e atomic pe același sistem de fișiere, deci un crash la
+        mijlocul scrierii lasă indexul vechi intact, nu unul trunchiat.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as f:
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.entries, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, self.path)

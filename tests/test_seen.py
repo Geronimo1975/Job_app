@@ -4,6 +4,8 @@ Teste pentru indexul de joburi văzute — dedupe cu memorie între rulări.
 
 import json
 
+import pytest
+
 from store.seen import (
     APLICAT,
     RESPINS_PREFILTRU,
@@ -144,3 +146,55 @@ class TestSeenIndex:
         path = tmp_path / "seen.json"
         path.write_text("{ nu e json valid", encoding="utf-8")
         assert len(SeenIndex.load(path)) == 0
+
+    def test_save_leaves_no_temp_file(self, tmp_path):
+        path = tmp_path / "seen.json"
+        idx = SeenIndex.load(path)
+        idx.mark({"url": "https://a.com/1", "company": "A", "title": "T"}, APLICAT)
+        idx.save()
+
+        assert path.exists()
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_failed_save_leaves_previous_index_intact(self, tmp_path):
+        """Dacă serializarea crapă, fișierul vechi trebuie să rămână valid."""
+        from unittest.mock import patch
+
+        path = tmp_path / "seen.json"
+        idx = SeenIndex.load(path)
+        idx.mark({"url": "https://a.com/1", "company": "A", "title": "T"}, APLICAT)
+        idx.save()
+
+        idx.mark({"url": "https://a.com/2", "company": "B", "title": "U"}, APLICAT)
+        with patch("store.seen.json.dump", side_effect=RuntimeError("disc plin")):
+            with pytest.raises(RuntimeError):
+                idx.save()
+
+        # Vechiul index e neatins și încă încărcabil.
+        reloaded = SeenIndex.load(path)
+        assert reloaded.is_seen({"url": "https://a.com/1", "company": "A", "title": "T"})
+
+    def test_corrupt_file_warns_on_stderr(self, tmp_path, capsys):
+        path = tmp_path / "seen.json"
+        path.write_text("{ nu e json valid", encoding="utf-8")
+
+        SeenIndex.load(path)
+
+        assert "Index dedupe ilizibil" in capsys.readouterr().err
+
+    def test_company_title_elimination_is_logged(self, tmp_path, capsys):
+        idx = SeenIndex.load(tmp_path / "seen.json")
+        idx.mark({"url": "https://boardA.com/1", "company": "ACME", "title": "Python Dev"}, APLICAT)
+
+        idx.filter_new([{"url": "https://boardB.com/9", "company": "ACME", "title": "Python Dev"}])
+
+        assert "Eliminat pe firmă+titlu" in capsys.readouterr().err
+
+    def test_url_elimination_is_not_logged(self, tmp_path, capsys):
+        """Potrivirea pe URL e sigură — nu merită zgomot."""
+        idx = SeenIndex.load(tmp_path / "seen.json")
+        idx.mark({"url": "https://a.com/1", "company": "A", "title": "T"}, APLICAT)
+
+        idx.filter_new([{"url": "https://a.com/1", "company": "A", "title": "T"}])
+
+        assert "Eliminat pe firmă+titlu" not in capsys.readouterr().err
