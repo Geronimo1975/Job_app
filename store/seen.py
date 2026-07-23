@@ -81,8 +81,13 @@ class SeenIndex:
             return cls(path)
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return cls(path, json.load(f))
-        except (json.JSONDecodeError, OSError) as e:
+                data = json.load(f)
+            # JSON valid dar de alt tip (listă, număr) ar trece de json.load
+            # și ar crăpa abia la primul mark(), cu AttributeError.
+            if not isinstance(data, dict):
+                raise ValueError(f"conținut de tip {type(data).__name__}, aștept obiect")
+            return cls(path, data)
+        except (json.JSONDecodeError, OSError, ValueError) as e:
             print(
                 f"  ⚠ Index dedupe ilizibil ({path}): {e}. "
                 "Pornesc de la zero — joburile deja aplicate pot reapărea.",
@@ -164,6 +169,12 @@ class SeenIndex:
         """
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.entries, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, self.path)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.entries, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        except Exception:
+            # Scrierea a eșuat: indexul vechi e neatins, dar temporarul nu
+            # trebuie lăsat în urmă. Excepția urcă — apelantul decide.
+            tmp.unlink(missing_ok=True)
+            raise

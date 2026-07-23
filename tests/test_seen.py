@@ -156,6 +156,31 @@ class TestSeenIndex:
         assert path.exists()
         assert list(tmp_path.glob("*.tmp")) == []
 
+    def test_failed_save_leaves_no_temp_file(self, tmp_path):
+        """Chiar și când scrierea crapă, temporarul nu rămâne în urmă."""
+        from unittest.mock import patch
+
+        path = tmp_path / "seen.json"
+        idx = SeenIndex.load(path)
+        idx.mark({"url": "https://a.com/1", "company": "A", "title": "T"}, APLICAT)
+
+        with patch("store.seen.json.dump", side_effect=RuntimeError("disc plin")):
+            with pytest.raises(RuntimeError):
+                idx.save()
+
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_json_of_wrong_type_starts_empty(self, tmp_path):
+        """JSON valid dar care nu e obiect nu trebuie să crape la primul mark()."""
+        path = tmp_path / "seen.json"
+        path.write_text("[]", encoding="utf-8")
+
+        idx = SeenIndex.load(path)
+
+        assert len(idx) == 0
+        idx.mark({"url": "https://a.com/1", "company": "A", "title": "T"}, APLICAT)
+        assert idx.is_seen({"url": "https://a.com/1", "company": "A", "title": "T"})
+
     def test_failed_save_leaves_previous_index_intact(self, tmp_path):
         """Dacă serializarea crapă, fișierul vechi trebuie să rămână valid."""
         from unittest.mock import patch
