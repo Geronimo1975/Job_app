@@ -8,6 +8,8 @@ Responsabilități:
   4. Salvează rezultatele rulării în data/jobs_scraped.json
 """
 
+import re
+
 from agents.base_agent import AgentResult, AgentStatus, BaseAgent
 from scrapers.base import Market, save_jobs
 from scrapers.career_page_scraper import CareerPageScraper
@@ -57,8 +59,12 @@ class ScraperAgent(BaseAgent):
                 jobs, errors = self._run_source(source, market)
                 all_jobs.extend(jobs)
                 result.errors.extend(errors)
+                # Blocante = erorile surselor ne-best-effort, mai puțin cele
+                # ale sub-site-urilor declarate best-effort (ex. linkedin).
                 if source not in market.best_effort_sources:
-                    blocking_errors.extend(errors)
+                    blocking_errors.extend(
+                        e for e in errors if not self._is_best_effort_error(e, market)
+                    )
                 self.logger.info(f"  {source}: {len(jobs)} joburi, {len(errors)} erori")
 
         path = save_jobs(all_jobs, self.project_root / "data" / "jobs_scraped.json")
@@ -76,9 +82,9 @@ class ScraperAgent(BaseAgent):
 
         # Statusul spune adevărul: varianta veche raporta SUCCESS chiar și
         # când majoritatea apelurilor eșuaseră.
-        if not all_jobs and result.errors:
+        if not all_jobs and blocking_errors:
             result.status = AgentStatus.FAILED
-            result.message = f"Scraping eșuat: {len(result.errors)} erori"
+            result.message = f"Scraping eșuat: {len(blocking_errors)} erori"
         elif blocking_errors:
             result.status = AgentStatus.PARTIAL
             result.message = f"{len(all_jobs)} joburi ({len(blocking_errors)} surse cu probleme)"
@@ -87,6 +93,19 @@ class ScraperAgent(BaseAgent):
             result.message = f"{len(all_jobs)} joburi din {len(all_markets)} piețe"
 
         return self._finish(result)
+
+    @staticmethod
+    def _is_best_effort_error(error: str, market: Market) -> bool:
+        """True dacă eroarea vine de la un sub-site declarat best-effort.
+
+        Sursele compuse (jobspy) raportează erori per site, cu prefixul
+        `[piață/site]`. `best_effort_sources: ["linkedin"]` din config se
+        referă la site-ul jobspy, nu la sursa orchestrată — fără potrivirea
+        pe etichetă, intrarea din config ar fi literă moartă și un 429 de la
+        LinkedIn ar coborî statusul la fiecare rulare.
+        """
+        m = re.match(r"\[[^/\]]+/([^\]]+)\]", error)
+        return bool(m) and m.group(1) in market.best_effort_sources
 
     def _run_source(self, source: str, market: Market) -> tuple[list[dict], list[str]]:
         """Rulează o sursă pentru o piață, prinzând orice excepție.

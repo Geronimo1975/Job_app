@@ -27,6 +27,7 @@ def agent(tmp_path):
                     "country": "GERMANY", "language": "de", "locations": ["Germany"],
                     "remote": False, "keyword_groups": [["Python Developer"]],
                     "sources": ["jobspy", "career_pages"],
+                    "best_effort_sources": ["linkedin"],
                 },
                 "ro_remote": {
                     "country": "ROMANIA", "language": "en", "locations": ["Romania"],
@@ -91,9 +92,10 @@ class TestSourceRouting:
         assert agent.career.scrape.call_count == 1
 
     def test_sources_override_restricts_execution(self, agent):
-        agent.run(sources=["jobspy"])
+        result = agent.run(sources=["jobspy"])
         agent.remote_boards.scrape_market.assert_not_called()
         agent.career.scrape.assert_not_called()
+        assert result.data["sources_used"] == ["jobspy"]
 
 
 class TestAggregation:
@@ -116,7 +118,7 @@ class TestHonestStatus:
 
     def test_partial_when_a_source_reports_errors(self, agent):
         """Erorile întoarse de scraper, nu excepțiile, contează pentru status."""
-        agent.jobspy.scrape_market.return_value = ([_job("https://a.com/1")], ["[de/linkedin] 429"])
+        agent.jobspy.scrape_market.return_value = ([_job("https://a.com/1")], ["[de/indeed] 429"])
         result = agent.run()
         assert result.status == AgentStatus.PARTIAL
         assert any("429" in e for e in result.errors)
@@ -146,3 +148,19 @@ class TestHonestStatus:
         result = agent.run()
         assert result.status == AgentStatus.SUCCESS
         assert any("403" in e for e in result.errors)   # tot se raportează
+
+    def test_best_effort_site_error_does_not_downgrade_status(self, agent):
+        """`linkedin` e site jobspy declarat best-effort: eroarea lui etichetată
+        [de/linkedin] se raportează, dar nu coboară statusul."""
+        agent.jobspy.scrape_market.return_value = (
+            [_job("https://a.com/1")], ["[de/linkedin] 429 Too Many Requests"]
+        )
+        result = agent.run(markets=["de"])
+        assert result.status == AgentStatus.SUCCESS
+        assert any("linkedin" in e for e in result.errors)
+
+    def test_zero_jobs_with_only_best_effort_errors_is_success(self, agent):
+        """Zero joburi + doar erori best-effort NU e FAILED — sursele blocante au rulat curat."""
+        agent.jobspy.scrape_market.return_value = ([], ["[de/linkedin] 429"])
+        result = agent.run(markets=["de"])
+        assert result.status == AgentStatus.SUCCESS
