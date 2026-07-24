@@ -4,6 +4,7 @@
 „Transmite" îl trimite prin SmtpSender (rate-limit pe disc, partajat cu poll-ul).
 Nicio funcție nu ridică excepții spre views — eșecul e codat în {ok, error}.
 """
+import os
 from pathlib import Path
 
 from generators.cover_letter_gen import CoverLetterGenerator
@@ -55,7 +56,11 @@ def generate_package(job) -> dict:
             job_description=job.description or "",
             location=job.location or "", language=language,
         )
-        txt_path = Path(gen.save_cover_letter(text, company, position))
+        # Subdirector per job: două joburi cu aceeași firmă+titlu ar genera
+        # EXACT aceleași nume de fișiere și și-ar suprascrie reciproc PDF-urile.
+        cl_dir = _REPO_ROOT / (cfg.get("documents", {}) or {}).get(
+            "cover_letters_dir", "documents/cover_letters/generated") / f"job-{job.pk}"
+        txt_path = Path(gen.save_cover_letter(text, company, position, output_dir=cl_dir))
     except Exception as e:
         return {"ok": False, "error": f"generare Anschreiben eșuată: {e}"}
 
@@ -106,9 +111,13 @@ def regenerate_pdfs(job) -> dict:
         text_to_pdf(job.anschreiben_text, pdf_path)
         if job.bewerbung_pdf_path:
             cv, certs = _docs_paths(cfg)
-            if cv.exists():
-                assemble_bewerbung(job.anschreiben_text, cv,
-                                   Path(job.bewerbung_pdf_path), certificates=certs)
+            if not cv.exists():
+                # Altfel Komplett-ul de pe disc ar rămâne cu textul VECHI și
+                # exact el are prioritate la atașare.
+                return {"ok": False, "error": "CV-ul lipsește pe disc — Bewerbung Komplett "
+                                              "nu poate fi refăcut din textul editat."}
+            assemble_bewerbung(job.anschreiben_text, cv,
+                               Path(job.bewerbung_pdf_path), certificates=certs)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": f"regenerare PDF eșuată: {e}"}
@@ -123,6 +132,18 @@ def send_package(job, live: bool, provider: str | None = None) -> dict:
         cfg = load_pipeline_config()
     except Exception as e:
         return {"ok": False, "live": live, "error": f"config necititbil: {e}"}
+    if live:
+        # Fără parolă în env, SmtpSender ar cădea pe getpass() → request blocat.
+        err = _smtp_password_env_missing(cfg, provider)
+        if err:
+            return {"ok": False, "live": True, "error": err}
+        # LIVE fără atașamente (sau cu fișiere dispărute) = pachet stricat.
+        paths = [Path(p) for p in (job.attachments_json or [])]
+        missing = [p.name for p in paths if not p.exists()]
+        if not paths or missing:
+            detail = ", ".join(missing) if missing else "(niciunul colectat)"
+            return {"ok": False, "live": True,
+                    "error": f"atașamente lipsă: {detail} — re-Execută pachetul."}
     attachments = [Path(p) for p in (job.attachments_json or []) if Path(p).exists()]
     try:
         smtp = SmtpSender(cfg, _REPO_ROOT)
@@ -150,3 +171,14 @@ def already_sent_in_sheet(job) -> str:
         return "da" if job.url.strip() in known else "nu"
     except Exception as e:
         return f"necunoscut ({e})"
+
+
+def _smtp_password_env_missing(cfg: dict, provider: str | None = None) -> str:
+    """"" dacă parola providerului activ e în env; altfel mesajul de eroare."""
+    email_cfg = cfg.get("email", {}) or {}
+    prov = provider or email_cfg.get("provider", "gmx")
+    prov_cfg = (email_cfg.get("providers", {}) or {}).get(prov, {}) or {}
+    env_key = prov_cfg.get("env_password_key", "")
+    if env_key and not os.environ.get(env_key):
+        return f"parola SMTP lipsește din mediu ({env_key}) — rulează: set -a; source .env; set +a"
+    return ""

@@ -9,6 +9,7 @@ urlpatterns = [
     path("job/<int:pk>/delete", views.delete_job, name="delete_job"),
     path("job/<int:pk>/push", views.push_job, name="push_job"),
     path("job/<int:pk>/execute", views.execute_job, name="execute_job"),
+    path("job/<int:pk>/recover", views.recover_job, name="recover_job"),
     path("job/<int:pk>/preview", views.preview_job, name="preview_job"),
     path("job/<int:pk>/transmit", views.transmit_job, name="transmit_job"),
     path("job/<int:pk>/doc/<str:kind>", views.serve_doc, name="serve_doc"),

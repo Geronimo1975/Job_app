@@ -9,6 +9,9 @@
     {% if job.sent_at %} · trimis {{ job.sent_at|date:"d.m.Y H:i" }}{% endif %}
   </p>
 
+  {% if job.send_error %}
+    <div class="banner live">Ultima eroare: {{ job.send_error }}</div>
+  {% endif %}
   {% if not job.email_hr %}
     <div class="banner live">Jobul nu are Kontakt Email — completează-l în
       <a href="{% url 'job_detail' job.pk %}">pagina jobului</a> înainte de transmitere.</div>
@@ -17,8 +20,8 @@
   <form method="post" action="{% url 'preview_job' job.pk %}">
     {% csrf_token %}
     <div class="field" style="margin-bottom:14px;">
-      <label>Către</label>
-      <input type="text" value="{{ job.email_hr|default:'(lipsește)' }}" readonly
+      <label for="id_email_to">Către</label>
+      <input type="text" id="id_email_to" value="{{ job.email_hr|default:'(lipsește)' }}" readonly
              class="mono" aria-readonly="true" style="opacity:.8;">
     </div>
     <div class="field" style="margin-bottom:14px;">
@@ -34,9 +37,16 @@
       <textarea id="id_anschreiben_text" name="anschreiben_text" class="big"
                 style="min-height:320px;">{{ job.anschreiben_text }}</textarea>
     </div>
+    {% if job.send_state != "sent" %}
     <div class="actions">
-      <button type="submit" class="btn-primary">Salvează editările</button>
+      <button type="submit" class="btn-secondary">Salvează editările</button>
+      {% if job.send_state == "generated" %}
+      <button type="submit" name="next" value="transmit" class="btn-primary">Salvează și transmite…</button>
+      {% endif %}
     </div>
+    {% else %}
+    <p class="sub">Pachet trimis — arhivă doar-citire.</p>
+    {% endif %}
   </form>
 
   <h3>Atașamente ({{ attachments|length }})</h3>
@@ -57,17 +67,13 @@
   {% endif %}
 
   <div class="actions">
-    {% if job.send_state == "generated" %}
-      <a href="{% url 'transmit_job' job.pk %}"><button type="button" class="btn-primary">Transmite…</button></a>
-    {% endif %}
     {% if job.send_state != "sent" %}
       <form method="post" action="{% url 'execute_job' job.pk %}"
-            onsubmit="return confirm('Regenerezi cu AI? Editările manuale se pierd.');">
+            onsubmit="if(!confirm('Regenerezi cu AI? Editările manuale se pierd.'))return false;var b=this.querySelector('button');b.disabled=true;b.textContent='Regenerez…';">
         {% csrf_token %}
-        <button type="submit" class="btn-secondary"
-                onclick="this.textContent='Regenerez…'">Re-execută (regenerare AI)</button>
+        <button type="submit" class="btn-secondary">Re-execută (regenerare AI)</button>
       </form>
     {% endif %}
-    <a href="{% url 'job_detail' job.pk %}"><button type="button" class="btn-secondary">Detalii job</button></a>
+    <a href="{% url 'job_detail' job.pk %}" class="btnlike btn-secondary">Detalii job</a>
   </div>
 {% endblock %}

@@ -317,6 +317,10 @@ class SheetBridgeTests(TestCase):
         self.assertEqual(payload["email_status"], "GESENDET")
         self.assertEqual(payload["url"], job.url)
         self.assertTrue(payload["gesendet_am"].startswith("2026-07-23"))
+        # Rândul complet, nu doar statusul: pe fluxul implicit rândul poate să
+        # NU existe încă în Sheet, iar un append cu 3 celule ar crea un rând ciot.
+        self.assertEqual(payload["company"], "ACME")
+        self.assertEqual(payload["title"], "Python Dev")
 
     @patch("jobs.sheet_bridge.load_pipeline_config", return_value={"n8n": {"enabled": False}})
     def test_mark_sent_disabled_fails(self, _cfg):
@@ -384,8 +388,12 @@ class GenerationBridgeTests(TestCase):
             mock_cl.return_value.generate.return_value = "Sehr geehrte..."
             mock_cl.return_value.save_cover_letter.return_value = txt
             mock_eb.return_value.generate.return_value = "Body email"
-            res = generation_bridge.generate_package(self._job())
+            job = self._job()
+            res = generation_bridge.generate_package(job)
         self.assertTrue(res["ok"])
+        # Anti-coliziune: fiecare job scrie în propriul subdirector
+        out_dir = mock_cl.return_value.save_cover_letter.call_args.kwargs["output_dir"]
+        self.assertIn(f"job-{job.pk}", str(out_dir))
         self.assertEqual(res["email_subject"], "Bewerbung als Python Dev — George")
         self.assertEqual(res["email_body"], "Body email")
         self.assertEqual(res["anschreiben_text"], "Sehr geehrte...")
@@ -415,13 +423,68 @@ class GenerationBridgeTests(TestCase):
     @patch("jobs.generation_bridge.SmtpSender")
     @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
     def test_send_package_live(self, _cfg, mock_smtp):
+        import tempfile
         from jobs import generation_bridge
         mock_smtp.return_value.send.return_value = True
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(b"%PDF")
         res = generation_bridge.send_package(
-            self._job(email_subject="S", email_body="B"), live=True)
+            self._job(email_subject="S", email_body="B", attachments_json=[f.name]), live=True)
         self.assertTrue(res["ok"])
         self.assertTrue(res["live"])
         self.assertFalse(mock_smtp.return_value.send.call_args.kwargs["dry_run"])
+
+    @patch("jobs.generation_bridge.SmtpSender")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_send_package_live_blocked_without_attachments(self, _cfg, mock_smtp):
+        # Un email LIVE fără niciun atașament e aproape sigur un pachet stricat
+        from jobs import generation_bridge
+        res = generation_bridge.send_package(
+            self._job(email_subject="S", email_body="B", attachments_json=[]), live=True)
+        self.assertFalse(res["ok"])
+        self.assertIn("atașamente", res["error"])
+        mock_smtp.return_value.send.assert_not_called()
+
+    @patch("jobs.generation_bridge.SmtpSender")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
+    def test_send_package_live_blocked_when_attachment_missing(self, _cfg, mock_smtp):
+        # Atașament dispărut de pe disc → LIVE blocat, nu trimis silențios fără el
+        from jobs import generation_bridge
+        res = generation_bridge.send_package(
+            self._job(email_subject="S", email_body="B",
+                      attachments_json=["/tmp/disparut-xyz.pdf"]), live=True)
+        self.assertFalse(res["ok"])
+        mock_smtp.return_value.send.assert_not_called()
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("jobs.generation_bridge.SmtpSender")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={
+        "email": {"provider": "gmx", "providers": {"gmx": {"env_password_key": "GMX_PASSWORD"}}}})
+    def test_send_package_live_blocked_without_smtp_password(self, _cfg, mock_smtp):
+        # Fără parolă în env, SmtpSender ar cădea pe getpass → request blocat la infinit
+        import tempfile
+        from jobs import generation_bridge
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(b"%PDF")
+        res = generation_bridge.send_package(
+            self._job(email_subject="S", email_body="B", attachments_json=[f.name]), live=True)
+        self.assertFalse(res["ok"])
+        self.assertIn("GMX_PASSWORD", res["error"])
+        mock_smtp.return_value.send.assert_not_called()
+
+    @patch("jobs.generation_bridge.assemble_bewerbung")
+    @patch("jobs.generation_bridge.text_to_pdf")
+    @patch("jobs.generation_bridge.load_pipeline_config", return_value={
+        "documents": {"cv_file": "documents/cv/inexistent-xyz.pdf"}})
+    def test_regenerate_fails_when_komplett_cannot_rebuild(self, _cfg, _pdf, mock_asm):
+        # CV lipsă → Komplett-ul ar rămâne cu textul VECHI pe disc; trebuie eroare, nu ok
+        from jobs import generation_bridge
+        job = self._job(anschreiben_text="Nou", anschreiben_pdf_path="/tmp/a.pdf",
+                        bewerbung_pdf_path="/tmp/k.pdf")
+        res = generation_bridge.regenerate_pdfs(job)
+        self.assertFalse(res["ok"])
+        self.assertIn("CV", res["error"])
+        mock_asm.assert_not_called()
 
     @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
     def test_send_package_without_email_fails(self, _cfg):
@@ -433,10 +496,14 @@ class GenerationBridgeTests(TestCase):
     @patch("jobs.generation_bridge.SmtpSender")
     @patch("jobs.generation_bridge.load_pipeline_config", return_value={})
     def test_send_package_refused_is_error(self, _cfg, mock_smtp):
+        import tempfile
         from jobs import generation_bridge
         mock_smtp.return_value.send.return_value = False
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(b"%PDF")
         res = generation_bridge.send_package(
-            self._job(email_subject="S", email_body="B"), live=True)
+            self._job(email_subject="S", email_body="B", attachments_json=[f.name]),
+            live=True)
         self.assertFalse(res["ok"])
         self.assertIn("refuzat", res["error"])
 
@@ -563,6 +630,81 @@ class PreviewSendViewTests(TestCase):
         job = self._job(send_state="draft")
         self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
         mock_send.assert_not_called()
+
+    @patch("jobs.views.send_package",
+           return_value={"ok": False, "live": False, "error": "rate limit"})
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_dry_failure_keeps_generated(self, _chk, _send):
+        # O SIMULARE eșuată nu are voie să distrugă pachetul revizuit (generated→error)
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {})
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "generated")
+
+    @patch("jobs.views.send_package")
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_live_blocked_while_sending(self, _chk, mock_send):
+        # Anti-dublu-submit: revendicarea atomică refuză al doilea POST
+        job = self._job(send_state="sending")
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        mock_send.assert_not_called()
+
+    @patch("jobs.views.mark_sent_in_sheet", return_value={"ok": False, "error": "n8n jos"})
+    @patch("jobs.views.send_package", return_value={"ok": True, "live": True})
+    @patch("jobs.views.already_sent_in_sheet", return_value="nu")
+    def test_transmit_live_sent_even_if_mark_fails(self, _chk, _send, _mark):
+        # Emailul A PLECAT: starea locală trebuie să fie sent chiar dacă Sheet-ul nu s-a marcat
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "sent")
+
+    @patch("jobs.views.send_package", return_value={"ok": True, "live": True})
+    @patch("jobs.views.mark_sent_in_sheet", return_value={"ok": True})
+    @patch("jobs.views.already_sent_in_sheet", return_value="necunoscut (n8n jos)")
+    def test_transmit_live_proceeds_with_warning_on_unknown_verdict(self, _chk, _mark, mock_send):
+        # Fail-open advisory: verdict necunoscut NU blochează, dar trimiterea are loc conștient
+        job = self._job()
+        self.client.post(reverse("transmit_job", args=[job.pk]), {"live": "on"})
+        mock_send.assert_called_once()
+
+    def test_preview_post_blocked_on_sent(self):
+        # Pachetul trimis e ARHIVĂ — editarea lui ar falsifica ce a plecat spre firmă
+        job = self._job(send_state="sent", email_body="Original trimis")
+        self.client.post(reverse("preview_job", args=[job.pk]), {
+            "email_subject": "X", "email_body": "Falsificat", "anschreiben_text": "X",
+        })
+        job.refresh_from_db()
+        self.assertEqual(job.email_body, "Original trimis")
+
+    @patch("jobs.views.regenerate_pdfs", return_value={"ok": True})
+    def test_preview_save_and_continue_redirects_to_transmit(self, _regen):
+        # „Salvează și transmite" — editările nu se pierd pe drumul spre confirmare
+        job = self._job()
+        resp = self.client.post(reverse("preview_job", args=[job.pk]), {
+            "email_subject": "S2", "email_body": "B2", "anschreiben_text": "A",
+            "next": "transmit",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, reverse("transmit_job", args=[job.pk]))
+        job.refresh_from_db()
+        self.assertEqual(job.email_body, "B2")
+
+    def test_recover_error_returns_to_generated(self):
+        # Recuperare fără regenerare AI: editările umane se păstrează
+        from django.utils import timezone as djtz
+        job = self._job(send_state="error", send_error="SMTP jos",
+                        generated_at=djtz.now())
+        resp = self.client.post(reverse("recover_job", args=[job.pk]))
+        self.assertEqual(resp.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "generated")
+
+    def test_recover_blocked_without_package(self):
+        job = self._job(send_state="error", generated_at=None)
+        self.client.post(reverse("recover_job", args=[job.pk]))
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "error")
 
     def test_serve_doc_missing_404(self):
         job = self._job()  # fără anschreiben_pdf_path

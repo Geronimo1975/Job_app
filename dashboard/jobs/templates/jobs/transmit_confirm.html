@@ -29,7 +29,11 @@
     </table>
   </div>
 
-  <form method="post" action="{% url 'transmit_job' job.pk %}">
+  <h3>Body email (exact ce pleacă)</h3>
+  <div class="desc" style="margin-bottom:18px;">{{ job.email_body|default:"(gol!)" }}</div>
+
+  <form method="post" action="{% url 'transmit_job' job.pk %}"
+        onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Se transmite…';">
     {% csrf_token %}
     <label class="live-toggle">
       <input type="checkbox" name="live">
@@ -37,7 +41,7 @@
     </label>
     <div class="actions">
       <button type="submit" class="btn-danger">Transmite</button>
-      <a href="{% url 'preview_job' job.pk %}"><button type="button" class="btn-secondary">Înapoi</button></a>
+      <a href="{% url 'preview_job' job.pk %}" class="btnlike btn-secondary">Înapoi</a>
     </div>
   </form>
 {% endblock %}

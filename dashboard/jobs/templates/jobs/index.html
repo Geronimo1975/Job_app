@@ -39,6 +39,13 @@
                   <button type="submit" class="btn-secondary btn-small"
                           onclick="this.disabled=true;this.textContent='Generez…';this.form.submit()">Execută</button>
                 </form>
+                {% if job.send_state == "error" and job.generated_at %}
+                <form method="post" action="{% url 'recover_job' job.pk %}"
+                      title="Reactivează pachetul existent fără regenerare AI">
+                  {% csrf_token %}
+                  <button type="submit" class="btn-secondary btn-small">Reia</button>
+                </form>
+                {% endif %}
               {% elif job.send_state == "generated" %}
                 <a href="{% url 'preview_job' job.pk %}">Preview</a>
                 <a href="{% url 'transmit_job' job.pk %}">Transmite</a>

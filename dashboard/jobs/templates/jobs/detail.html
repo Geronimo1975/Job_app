@@ -8,6 +8,9 @@
     <span class="pill {{ job.send_state }}">{{ job.send_state }}</span>
     {% if job.sent_at %} · trimis: {{ job.sent_at|date:"d.m.Y H:i" }}{% endif %}
   </p>
+  {% if job.send_error %}
+    <div class="banner live">Ultima eroare: {{ job.send_error }}</div>
+  {% endif %}
   <div class="meta">
     <span><strong>URL:</strong> <a href="{{ job.url }}" target="_blank" rel="noopener" class="mono">{{ job.url }}</a></span>
   </div>
@@ -34,9 +37,9 @@
       {% csrf_token %}<button type="submit" class="btn-secondary">Salvează în Sheet</button>
     </form>
     {% if job.send_state == "generated" %}
-      <a href="{% url 'preview_job' job.pk %}"><button type="button" class="btn-primary">Preview…</button></a>
+      <a href="{% url 'preview_job' job.pk %}" class="btnlike btn-primary">Preview…</a>
     {% elif job.send_state == "sent" %}
-      <a href="{% url 'preview_job' job.pk %}"><button type="button" class="btn-secondary">Vezi pachetul trimis</button></a>
+      <a href="{% url 'preview_job' job.pk %}" class="btnlike btn-secondary">Vezi pachetul trimis</a>
     {% else %}
       <form method="post" action="{% url 'execute_job' job.pk %}">
         {% csrf_token %}

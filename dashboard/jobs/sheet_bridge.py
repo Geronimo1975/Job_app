@@ -92,11 +92,12 @@ def mark_sent_in_sheet(job) -> dict:
     if client is None:
         return {"ok": False, "error": err}
     moment = timezone.localtime(job.sent_at or timezone.now())
-    payload = {
-        "url": job.url,
-        "email_status": "GESENDET",
-        "gesendet_am": moment.strftime("%Y-%m-%d %H:%M"),
-    }
+    # Rândul COMPLET, nu doar statusul: pe fluxul implicit (Execută→Transmite,
+    # fără „Salvează în Sheet") rândul poate să nu existe încă, iar un append
+    # cu 3 celule ar crea un rând ciot fără firmă/poziție.
+    payload = job_to_internal(job)
+    payload["email_status"] = "GESENDET"
+    payload["gesendet_am"] = moment.strftime("%Y-%m-%d %H:%M")
     try:
         client.ingest([payload])
     except Exception as e:

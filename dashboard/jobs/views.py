@@ -76,20 +76,6 @@ def delete_job(request, pk):
     return redirect("index")
 
 
-def reset_job(request, pk):
-    """Resetează starea locală la draft (nu atinge Sheet-ul — col P rămâne cum e)."""
-    if request.method == "POST":
-        job = get_object_or_404(Job, pk=pk)
-        job.send_state = "draft"
-        job.seen_in_pending = False
-        job.save(update_fields=["send_state", "seen_in_pending"])
-        messages.info(
-            request,
-            "Stare resetată la draft (doar local — dacă col P din Sheet mai are SENDEN, golește-o manual).",
-        )
-    return redirect("job_detail", pk=pk)
-
-
 def push_job(request, pk):
     """„Salvează în Sheet" — upsert-ul câmpurilor, FĂRĂ comandă de trimitere."""
     if request.method != "POST":
@@ -144,6 +130,10 @@ def preview_job(request, pk):
     """Preview editabil: email (subiect+body) și Anschreiben; PDF-urile se refac la salvare."""
     job = get_object_or_404(Job, pk=pk)
     if request.method == "POST":
+        if job.send_state == "sent":
+            # Pachetul trimis e ARHIVA a ceea ce a plecat — nu se rescrie.
+            messages.error(request, "Pachetul e deja trimis — arhiva nu se editează.")
+            return redirect("preview_job", pk=pk)
         job.email_subject = request.POST.get("email_subject", job.email_subject)
         job.email_body = request.POST.get("email_body", job.email_body)
         new_text = request.POST.get("anschreiben_text", job.anschreiben_text)
@@ -158,6 +148,9 @@ def preview_job(request, pk):
                 messages.warning(request, f"Editări salvate, dar PDF-ul NU s-a refăcut: {res['error']}")
         else:
             messages.success(request, "Editări salvate.")
+        # „Salvează și transmite" — editările ajung garantat în pachet înainte de confirmare
+        if request.POST.get("next") == "transmit":
+            return redirect("transmit_job", pk=pk)
         return redirect("preview_job", pk=pk)
     return render(request, "jobs/preview.html", {
         "job": job, "attachments": _attachment_entries(job), "section": "jobs",
@@ -168,18 +161,45 @@ def transmit_job(request, pk):
     """Confirmare + trimitere: dry-run implicit, LIVE doar cu comutatorul bifat."""
     job = get_object_or_404(Job, pk=pk)
     if request.method == "POST":
-        if job.send_state != "generated":
-            messages.error(request, f"Starea e „{job.send_state}” — doar pachetele „generated” se transmit.")
-            return redirect("index")
         if not (job.email_hr or "").strip():
             messages.error(request, "Fără Kontakt Email — completează-l întâi în pagina jobului.")
             return redirect("job_detail", pk=pk)
         live = request.POST.get("live") == "on"
-        if live and already_sent_in_sheet(job) == "da":
+
+        if not live:
+            # SIMULARE: nu revendică starea și nu o distruge la eșec.
+            if job.send_state != "generated":
+                messages.error(request, f"Starea e „{job.send_state}” — doar pachetele „generated” se transmit.")
+                return redirect("index")
+            res = send_package(job, live=False)
+            if res["ok"]:
+                messages.info(request, "Dry-run OK — nimic nu a fost trimis. Bifează LIVE când ești gata.")
+            else:
+                job.send_error = res["error"]
+                job.save(update_fields=["send_error"])
+                messages.error(request, f"Dry-run eșuat: {res['error']} — pachetul rămâne intact (generated).")
+            return redirect("transmit_job", pk=pk)
+
+        # LIVE: garda Sheet (fail-open advisory, dar niciodată silențios)
+        verdict = already_sent_in_sheet(job)
+        if verdict == "da":
             messages.error(request, "Sheet-ul arată jobul DEJA trimis (done/sent/GESENDET) — LIVE blocat.")
             return redirect("transmit_job", pk=pk)
-        res = send_package(job, live=live)
-        if res["ok"] and live:
+        if verdict.startswith("necunoscut"):
+            messages.warning(request, f"Verificarea Sheet-ului indisponibilă ({verdict}) — trimit totuși, asigură-te că nu retrimiți.")
+
+        # Revendicare ATOMICĂ anti-dublu-submit: trimiterea durează ~35s
+        # (SMTP + delay-ul dintre emailuri), fereastră în care un al doilea
+        # POST ar trece de o simplă verificare a stării.
+        claimed = Job.objects.filter(pk=pk, send_state="generated").update(send_state="sending")
+        if claimed != 1:
+            job.refresh_from_db()
+            messages.error(request, f"Trimitere neîncepută: starea e „{job.send_state}” (posibil o trimitere deja în curs).")
+            return redirect("index")
+        job.refresh_from_db()
+
+        res = send_package(job, live=True)
+        if res["ok"]:
             job.send_state = "sent"
             job.sent_at = timezone.now()
             job.send_error = ""
@@ -191,9 +211,6 @@ def transmit_job(request, pk):
                 messages.warning(request, f"Email TRIMIS, dar Sheet-ul NU s-a marcat ({mark['error']}) "
                                           "— completează manual col R „Email Status”=GESENDET.")
             return redirect("sent_list")
-        if res["ok"]:
-            messages.info(request, "Dry-run OK — nimic nu a fost trimis. Bifează LIVE când ești gata.")
-            return redirect("transmit_job", pk=pk)
         job.send_state = "error"
         job.send_error = res["error"]
         job.save(update_fields=["send_state", "send_error"])
@@ -221,6 +238,19 @@ def serve_attachment(request, pk, idx):
     if not (0 <= idx < len(paths)) or not Path(paths[idx]).exists():
         raise Http404
     return FileResponse(open(paths[idx], "rb"))
+
+
+def recover_job(request, pk):
+    """error → generated: reia pachetul editat FĂRĂ regenerare AI (editările rămân)."""
+    if request.method == "POST":
+        job = get_object_or_404(Job, pk=pk)
+        if job.send_state == "error" and job.generated_at:
+            job.send_state = "generated"
+            job.save(update_fields=["send_state"])
+            messages.info(request, "Pachet reactivat — poți transmite din nou (editările păstrate).")
+        else:
+            messages.error(request, "Reactivarea e doar pentru stări „error” cu pachet generat.")
+    return redirect("index")
 
 
 def sent_list(request):
