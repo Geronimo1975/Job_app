@@ -825,3 +825,172 @@ class SearchModelTests(TestCase):
         job.delete()
         res.refresh_from_db()
         self.assertIsNone(res.imported_job)
+
+
+class SearchBridgeQueryTests(TestCase):
+    def test_presets_come_from_settings_yaml(self):
+        from jobs import search_bridge
+        keys = [p["key"] for p in search_bridge.presets()]
+        self.assertIn("de", keys)
+        self.assertIn("ro_remote", keys)
+
+    def test_preset_exposes_keywords_one_group_per_line(self):
+        from jobs import search_bridge
+        de = next(p for p in search_bridge.presets() if p["key"] == "de")
+        self.assertIn("\n", de["keywords"])
+        self.assertIn("Python Developer", de["keywords"])
+
+    def test_query_from_params_parses_keyword_groups(self):
+        from jobs import search_bridge
+        q = search_bridge.query_from_params({
+            "keywords": "Python Developer, Django Developer\nAI Engineer",
+            "location": "Berlin", "country": "GERMANY", "language": "de",
+            "sites": ["indeed"], "hours_old": 48, "results_wanted": 20,
+        })
+        self.assertEqual(q.keyword_groups,
+                         [["Python Developer", "Django Developer"], ["AI Engineer"]])
+        self.assertEqual(q.hours_old, 48)
+        self.assertEqual(q.market_key, "adhoc")
+
+    def test_label_summarises_the_search(self):
+        from jobs import search_bridge
+        label = search_bridge.label_for({
+            "preset": "de", "keywords": "Python Developer\nAI Engineer",
+            "location": "Berlin",
+        })
+        self.assertIn("Python Developer", label)
+        self.assertIn("Berlin", label)
+
+
+class SearchWorkerTests(TestCase):
+    PARAMS = {
+        "preset": "de", "keywords": "Python Developer", "location": "Berlin",
+        "country": "GERMANY", "language": "de", "sites": ["indeed"],
+        "hours_old": 72, "results_wanted": 10, "remote": False,
+    }
+
+    def _job(self, **over):
+        job = {
+            "url": "https://acme.de/jobs/1", "title": "Python Developer",
+            "company": "ACME", "location": "Berlin", "platform": "indeed",
+            "description": "Django and Python backend", "email_hr": "hr@acme.de",
+            "date_posted": "2026-07-20", "language": "de",
+            "salary_min": None, "salary_max": None, "raw": {"currency": "EUR"},
+        }
+        job.update(over)
+        return job
+
+    def _start(self, jobs, errors):
+        """Pornește o rulare și execută worker-ul sincron (fără thread)."""
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json=self.PARAMS)
+        with patch.object(search_bridge.JobSpyScraper, "scrape_query",
+                          return_value=(jobs, errors)):
+            search_bridge.run_search_now(run.pk)
+        run.refresh_from_db()
+        return run
+
+    def test_successful_run_saves_results(self):
+        run = self._start([self._job()], [])
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.found_count, 1)
+        self.assertIsNotNone(run.finished_at)
+        res = run.results.get()
+        self.assertEqual(res.title, "Python Developer")
+        self.assertEqual(res.email_hr, "hr@acme.de")
+        self.assertEqual(res.platform, "indeed")
+        self.assertEqual(res.raw_json["currency"], "EUR")
+
+    def test_prescore_and_reasons_are_stored(self):
+        run = self._start([self._job()], [])
+        res = run.results.get()
+        self.assertGreater(res.prescore, 0)
+        self.assertTrue(res.prescore_reasons_json)
+
+    def test_warnings_and_errors_are_split_by_prefix(self):
+        from scrapers.jobspy_scraper import WARNING_PREFIX
+        run = self._start(
+            [self._job()],
+            [f"{WARNING_PREFIX} [de/indeed] am renunțat la hours_old",
+             "[de/linkedin] Python Developer: 429"],
+        )
+        self.assertEqual(len(run.warnings_json), 1)
+        self.assertEqual(len(run.errors_json), 1)
+        self.assertIn("429", run.errors_json[0])
+
+    def test_duplicate_urls_are_collapsed(self):
+        run = self._start([self._job(), self._job()], [])
+        self.assertEqual(run.found_count, 1)
+
+    def test_no_results_with_errors_is_an_error_run(self):
+        run = self._start([], ["[de/indeed] Python Developer: 500"])
+        self.assertEqual(run.status, "error")
+
+    def test_no_results_without_errors_is_a_done_run(self):
+        run = self._start([], [])
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.found_count, 0)
+
+    def test_exception_in_scraper_marks_run_as_error(self):
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json=self.PARAMS)
+        with patch.object(search_bridge.JobSpyScraper, "scrape_query",
+                          side_effect=RuntimeError("jobspy a explodat")):
+            search_bridge.run_search_now(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "error")
+        self.assertIn("jobspy a explodat", run.errors_json[0])
+
+    def test_seen_state_comes_from_the_index(self):
+        from jobs import search_bridge
+        from store.seen import APLICAT
+
+        class FakeIndex:
+            def decision_for(self, job):
+                return APLICAT
+
+        with patch.object(search_bridge, "_load_seen", return_value=FakeIndex()):
+            run = self._start([self._job()], [])
+        self.assertEqual(run.results.get().seen_state, APLICAT)
+
+
+class SearchConcurrencyTests(TestCase):
+    def test_second_search_is_refused_while_one_runs(self):
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        SearchRun.objects.create(label="în curs", params_json={}, status="running")
+        res = search_bridge.start_search(SearchWorkerTests.PARAMS)
+        self.assertFalse(res["ok"])
+        self.assertIn("în curs", res["error"])
+
+    def test_stale_run_does_not_block_a_new_search(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+
+        old = SearchRun.objects.create(label="mort", params_json={}, status="running")
+        SearchRun.objects.filter(pk=old.pk).update(
+            started_at=timezone.now() - timedelta(minutes=25))
+
+        self.assertEqual(search_bridge.expire_stale_runs(), 1)
+        old.refresh_from_db()
+        self.assertEqual(old.status, "error")
+        self.assertIn("întrerupt", old.errors_json[0])
+
+    def test_start_search_expires_stale_runs_first(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+
+        old = SearchRun.objects.create(label="mort", params_json={}, status="running")
+        SearchRun.objects.filter(pk=old.pk).update(
+            started_at=timezone.now() - timedelta(minutes=25))
+
+        with patch.object(search_bridge.threading, "Thread") as thread:
+            res = search_bridge.start_search(SearchWorkerTests.PARAMS)
+        self.assertTrue(res["ok"])
+        thread.assert_called_once()

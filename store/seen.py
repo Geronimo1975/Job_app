@@ -104,6 +104,18 @@ class SeenIndex:
     def is_seen(self, job: dict) -> bool:
         return any(k in self.entries for k in self._keys(job))
 
+    def decision_for(self, job: dict) -> str:
+        """Decizia înregistrată pentru job, sau "" dacă nu a fost văzut.
+
+        `is_seen` spune doar dacă jobul e cunoscut; dashboard-ul trebuie să
+        arate și DE CE (aplicat vs respins la prefiltru).
+        """
+        for key in self._keys(job):
+            entry = self.entries.get(key)
+            if isinstance(entry, dict) and entry.get("decision"):
+                return str(entry["decision"])
+        return ""
+
     def mark(self, job: dict, decision: str) -> None:
         """Marchează jobul cu o decizie, păstrând `first_seen` la prima vedere."""
         now = datetime.now().isoformat(timespec="seconds")
