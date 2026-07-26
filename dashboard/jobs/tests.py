@@ -1323,10 +1323,17 @@ class SearchTemplateTests(TestCase):
     def test_get_with_known_preset_seeds_the_form_from_it(self):
         """Butonul „Încarcă preset" (fără JS) trebuie să semene formularul
         din presetul cerut prin query string, nu doar din primul preset."""
+        # NU `assertContains(resp, ro["location"])` — locația fiecărui preset
+        # e randată oricum în textul propriului <option> din selectorul de
+        # preset (`cauta.html:23`), deci substring-ul gol ar trece și pe
+        # pagina cu presetul greșit. Legăm asersarea de câmpul real de
+        # formular (`name="location" value="..."`), care reflectă ce a
+        # semănat efectiv `SearchForm(initial=...)`.
         from jobs import search_bridge
         ro = next(p for p in search_bridge.presets() if p["key"] == "ro_remote")
         resp = self.client.get(reverse("search_index"), {"preset": "ro_remote"})
-        self.assertContains(resp, ro["location"])
+        self.assertContains(
+            resp, 'name="location" value="%s"' % ro["location"])
         self.assertContains(resp, 'value="ro_remote" selected')
 
     def test_get_with_unknown_preset_falls_back_to_default_without_crashing(self):

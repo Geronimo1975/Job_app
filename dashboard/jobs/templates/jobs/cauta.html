@@ -178,8 +178,19 @@
         set("language", p.language);
         set("hours_old", p.hours_old);
         set("results_wanted", p.results_wanted);
+        set("google_search_term", p.google_search_term);
+        // `job_type`/`distance` NU fac parte din datele presetului
+        // (`search_bridge.presets()` nu le include) — la o schimbare de
+        // preset FĂRĂ JS (reîncărcare completă a paginii), tot dispar,
+        // resetate la valorile implicite ale formularului. Le resetăm și
+        // aici, ca schimbarea presetului să însemne același lucru pe
+        // ambele căi, nu doar pe cea cu JS oprit.
+        set("job_type", "");
+        set("distance", "");
         var remote = searchForm.querySelector('[name="remote"]');
         if (remote) { remote.checked = !!p.remote; }
+        var linkedinDesc = searchForm.querySelector('[name="linkedin_fetch_description"]');
+        if (linkedinDesc) { linkedinDesc.checked = !!p.linkedin_fetch_description; }
         searchForm.querySelectorAll('[name="sites"]').forEach(function (box) {
           box.checked = p.sites.indexOf(box.value) !== -1;
         });
