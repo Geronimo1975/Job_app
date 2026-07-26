@@ -43,3 +43,73 @@ class Job(models.Model):
 
     def __str__(self):
         return f"{self.title or '(fără titlu)'} @ {self.company or '?'}"
+
+
+class SearchRun(models.Model):
+    """O căutare JobSpy = un snapshot. Rulează într-un thread de fundal."""
+
+    RUNNING, DONE, ERROR = "running", "done", "error"
+
+    label = models.CharField(max_length=200)
+    # Parametrii exacți ai căutării, ca să poți repeta sau audita rularea.
+    params_json = models.JSONField(default=dict)
+    status = models.CharField(max_length=10, default=RUNNING)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    # Rezultate salvate (nu se ascunde nimic sub prag) și câte au ajuns în Job.
+    found_count = models.IntegerField(default=0)
+    imported_count = models.IntegerField(default=0)
+    # Avertismentele (filtre renunțate) sunt separate de erori: prima categorie
+    # descrie o degradare, a doua un eșec de sursă.
+    warnings_json = models.JSONField(default=list, blank=True)
+    errors_json = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-started_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.label} ({self.status})"
+
+    @property
+    def duration_sec(self) -> int | None:
+        if not self.finished_at:
+            return None
+        return int((self.finished_at - self.started_at).total_seconds())
+
+
+class SearchResult(models.Model):
+    """Un rezultat de căutare, în staging — devine `Job` doar la import."""
+
+    run = models.ForeignKey(SearchRun, related_name="results",
+                            on_delete=models.CASCADE)
+    url = models.URLField(max_length=500)
+    title = models.CharField(max_length=300, blank=True)
+    company = models.CharField(max_length=200, blank=True)
+    location = models.CharField(max_length=200, blank=True)
+    platform = models.CharField(max_length=40, blank=True)
+    date_posted = models.CharField(max_length=40, blank=True)
+    language = models.CharField(max_length=5, blank=True, default="")
+    description = models.TextField(blank=True)
+    email_hr = models.CharField(max_length=254, blank=True)
+    salary_min = models.IntegerField(null=True, blank=True)
+    salary_max = models.IntegerField(null=True, blank=True)
+    # Scorul determinist din filters/relevance.py + motivele, ca să fie auditabil.
+    prescore = models.IntegerField(default=0)
+    prescore_reasons_json = models.JSONField(default=list, blank=True)
+    # Decizia din store/seen.py: "" | aplicat | respins_prefiltru. Citit
+    # read-only — dashboard-ul nu scrie în seen_jobs.json.
+    seen_state = models.CharField(max_length=20, blank=True, default="")
+    # SET_NULL: ștergerea unui Job nu trebuie să șteargă istoricul căutării.
+    imported_job = models.ForeignKey("Job", null=True, blank=True,
+                                     on_delete=models.SET_NULL,
+                                     related_name="search_results")
+    raw_json = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-prescore", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["run", "url"], name="uniq_url_per_run"),
+        ]
+
+    def __str__(self):
+        return f"{self.title or '(fără titlu)'} @ {self.company or '?'}"

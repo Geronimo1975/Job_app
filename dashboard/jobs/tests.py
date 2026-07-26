@@ -6,7 +6,7 @@ from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from jobs import extractor
-from jobs.models import Job
+from jobs.models import Job, SearchResult, SearchRun
 
 
 class JobModelTests(TestCase):
@@ -754,3 +754,74 @@ class RenderTests(TestCase):
         Job.objects.create(url="https://a.co/1", title="Alpha", send_state="sent")
         resp = self.client.get(reverse("index"))
         self.assertContains(resp, "GESENDET")
+
+
+class SearchModelTests(TestCase):
+    def _run(self, **over):
+        data = dict(label="de · Python Developer", params_json={"preset": "de"},
+                    status="running")
+        data.update(over)
+        return SearchRun.objects.create(**data)
+
+    def test_run_defaults(self):
+        run = self._run()
+        self.assertEqual(run.found_count, 0)
+        self.assertEqual(run.imported_count, 0)
+        self.assertEqual(run.warnings_json, [])
+        self.assertEqual(run.errors_json, [])
+        self.assertIsNone(run.finished_at)
+        self.assertIsNotNone(run.started_at)
+
+    def test_runs_are_newest_first(self):
+        first = self._run(label="prima")
+        second = self._run(label="a doua")
+        self.assertEqual(
+            list(SearchRun.objects.values_list("pk", flat=True)),
+            [second.pk, first.pk],
+        )
+
+    def test_duration_is_none_while_running(self):
+        self.assertIsNone(self._run().duration_sec)
+
+    def test_duration_counts_seconds_when_finished(self):
+        from datetime import timedelta
+        run = self._run()
+        run.finished_at = run.started_at + timedelta(seconds=42)
+        run.save()
+        self.assertEqual(run.duration_sec, 42)
+
+    def test_results_are_sorted_by_score_desc(self):
+        run = self._run()
+        SearchResult.objects.create(run=run, url="https://a.co/1", prescore=30)
+        SearchResult.objects.create(run=run, url="https://a.co/2", prescore=80)
+        self.assertEqual(
+            list(run.results.values_list("prescore", flat=True)), [80, 30]
+        )
+
+    def test_same_url_twice_in_one_run_is_rejected(self):
+        from django.db import IntegrityError
+        run = self._run()
+        SearchResult.objects.create(run=run, url="https://a.co/1")
+        with self.assertRaises(IntegrityError):
+            SearchResult.objects.create(run=run, url="https://a.co/1")
+
+    def test_same_url_in_two_runs_is_allowed(self):
+        """Fiecare rulare e un snapshot propriu — dublura se vede din badge."""
+        SearchResult.objects.create(run=self._run(), url="https://a.co/1")
+        SearchResult.objects.create(run=self._run(), url="https://a.co/1")
+        self.assertEqual(SearchResult.objects.count(), 2)
+
+    def test_deleting_run_deletes_its_results(self):
+        run = self._run()
+        SearchResult.objects.create(run=run, url="https://a.co/1")
+        run.delete()
+        self.assertEqual(SearchResult.objects.count(), 0)
+
+    def test_deleting_imported_job_keeps_the_result(self):
+        """Ștergerea unui Job nu trebuie să șteargă istoricul căutării."""
+        job = Job.objects.create(url="https://a.co/1")
+        res = SearchResult.objects.create(run=self._run(), url="https://a.co/1",
+                                          imported_job=job)
+        job.delete()
+        res.refresh_from_db()
+        self.assertIsNone(res.imported_job)
