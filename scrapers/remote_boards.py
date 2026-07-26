@@ -100,7 +100,8 @@ class RemoteBoardsScraper:
                     location=entry.get("location", "Remote"),
                     url=entry.get("url", ""),
                     description=_clean(entry.get("description", "")),
-                    market=market,
+                    market_key=market.key,
+                    language=market.language,
                     date_posted=str(entry.get("date", "")),
                 )
             )
@@ -120,7 +121,8 @@ class RemoteBoardsScraper:
                     location=entry.get("candidate_required_location", "Remote"),
                     url=entry.get("url", ""),
                     description=_clean(entry.get("description", "")),
-                    market=market,
+                    market_key=market.key,
+                    language=market.language,
                     date_posted=str(entry.get("publication_date", "")),
                 )
             )
@@ -158,7 +160,8 @@ class RemoteBoardsScraper:
                     location="Remote",
                     url=link,
                     description=_clean(item.findtext("description") or ""),
-                    market=market,
+                    market_key=market.key,
+                    language=market.language,
                     date_posted=(item.findtext("pubDate") or "").strip(),
                 )
             )

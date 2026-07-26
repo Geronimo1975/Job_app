@@ -119,7 +119,8 @@ class RoBoardsScraper:
                     # Link-urile din listă sunt relative.
                     url=urljoin(_EJOBS_BASE, link["href"]),
                     description="",  # descrierea completă e pe pagina jobului
-                    market=market,
+                    market_key=market.key,
+                    language=market.language,
                 )
             )
 

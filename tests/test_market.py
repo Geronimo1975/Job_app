@@ -86,21 +86,21 @@ class TestMakeJob:
         job = make_job(
             source="remoteok", platform="remoteok", title="Python Dev",
             company="ACME", location="Remote", url="https://x.com/1",
-            description="desc", market=market,
+            description="desc", market_key=market.key, language=market.language,
         )
         assert job["language"] == "en"
 
     def test_sets_market_key(self, market):
         job = make_job(
             source="remoteok", platform="remoteok", title="T", company="C",
-            location="L", url="https://x.com/1", description="d", market=market,
+            location="L", url="https://x.com/1", description="d", market_key=market.key, language=market.language,
         )
         assert job["market"] == "ro_remote"
 
     def test_gefunden_am_is_iso_date(self, market):
         job = make_job(
             source="remoteok", platform="remoteok", title="T", company="C",
-            location="L", url="https://x.com/1", description="d", market=market,
+            location="L", url="https://x.com/1", description="d", market_key=market.key, language=market.language,
         )
         assert len(job["gefunden_am"]) == 10
         assert job["gefunden_am"][4] == "-"
@@ -109,7 +109,7 @@ class TestMakeJob:
         """`new` NU e o stare din col M; n8n_mapping îl filtrează la push."""
         job = make_job(
             source="remoteok", platform="remoteok", title="T", company="C",
-            location="L", url="https://x.com/1", description="d", market=market,
+            location="L", url="https://x.com/1", description="d", market_key=market.key, language=market.language,
         )
         assert job["status"] == "new"
 
@@ -117,7 +117,7 @@ class TestMakeJob:
         job = make_job(
             source="remoteok", platform="remoteok", title="T", company="C",
             location="L", url="https://x.com/1", description="x" * 9000,
-            market=market,
+            market_key=market.key, language=market.language,
         )
         assert len(job["description"]) == 5000
 
@@ -125,7 +125,7 @@ class TestMakeJob:
         job = make_job(
             source="remoteok", platform="remoteok", title="  Python Dev \n",
             company=" ACME ", location="L", url=" https://x.com/1 ",
-            description="d", market=market,
+            description="d", market_key=market.key, language=market.language,
         )
         assert job["title"] == "Python Dev"
         assert job["company"] == "ACME"
@@ -137,7 +137,7 @@ class TestSaveJobs:
         market = next(m for m in Market.from_config(CFG) if m.key == "de")
         job = make_job(
             source="jobspy", platform="indeed", title="T", company="C",
-            location="L", url="https://x.com/1", description="d", market=market,
+            location="L", url="https://x.com/1", description="d", market_key=market.key, language=market.language,
         )
         path = save_jobs([job], tmp_path / "sub" / "jobs.json")
 
@@ -151,7 +151,7 @@ class TestSaveJobs:
         for title in ("A", "B"):
             job = make_job(
                 source="jobspy", platform="indeed", title=title, company="C",
-                location="L", url="https://x.com/1", description="d", market=market,
+                location="L", url="https://x.com/1", description="d", market_key=market.key, language=market.language,
             )
             save_jobs([job], path)
 
