@@ -465,10 +465,24 @@ class TestUnknownSite:
         }
 ```
 
-**Actualizează testul existent** `TestScrapeMarket::test_passes_country_and_remote_from_market` — el asertează azi `kwargs["hours_old"] == 72` pentru `ro_remote`, ceea ce e chiar bug-ul reparat. Înlocuiește-l cu:
+**Actualizează testul existent** `TestScrapeMarket::test_passes_country_and_remote_from_market` — el asertează azi `kwargs["hours_old"] == 72` pentru `ro_remote`, ceea ce e chiar bug-ul reparat.
+
+> **Modificare autorizată de proprietar (pre-flight JOB-46).** Testul cimenta
+> comportamentul greșit: asertează un `hours_old` pe care Indeed îl ignoră când
+> primește și `is_remote`. Inversarea așteptării e scopul task-ului, nu o
+> adaptare ca să treacă suita. Comentariul din test e **obligatoriu** — fără el,
+> peste șase luni nimeni nu știe de ce așteptarea s-a inversat.
+
+Înlocuiește-l cu:
 
 ```python
     def test_passes_country_and_remote_from_market(self, tmp_path):
+        """Piață remote: pe Indeed, is_remote exclude hours_old.
+
+        Testul asertase înainte `hours_old == 72` pe ambele site-uri, ceea ce
+        cimenta bug-ul: upstream ignoră unul din filtre când Indeed le primește
+        împreună, deci filtrul de vechime nu se aplica deși codul îl trimitea.
+        """
         scraper = JobSpyScraper(CFG, tmp_path)
         with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
             mock.return_value = FakeDataFrame([])
@@ -1919,14 +1933,15 @@ class SearchFormTests(SimpleTestCase):
         form = SearchForm({**self.BASE, "hours_old": ""})
         self.assertTrue(form.is_valid())
         self.assertIsNone(form.cleaned_data["hours_old"])
+```
 
+> **Împărțire decisă de proprietar (pre-flight JOB-46).** Testele care
+> randează template-uri se scriu în Task 9, lângă template-urile lor. Task 8
+> conține DOAR teste care nu ating template-uri (formular + redirect-uri), ca
+> suita să rămână verde la commit-ul acestui task.
 
+```python
 class SearchViewTests(TestCase):
-    def test_get_search_page_lists_presets(self):
-        resp = self.client.get(reverse("search_index"))
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "ro_remote")
-
     def test_post_starts_a_search_and_redirects_to_the_run(self):
         from jobs.models import SearchRun
         with patch("jobs.views.search_bridge.threading.Thread") as thread:
@@ -1938,34 +1953,6 @@ class SearchViewTests(TestCase):
         run = SearchRun.objects.get()
         self.assertRedirects(resp, reverse("search_run", args=[run.pk]))
         thread.assert_called_once()
-
-    def test_invalid_post_redisplays_the_form_without_starting(self):
-        from jobs.models import SearchRun
-        resp = self.client.post(reverse("search_index"), {
-            "keywords": "", "location": "Berlin", "sites": ["indeed"]})
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(SearchRun.objects.count(), 0)
-
-    def test_run_page_shows_results(self):
-        from jobs.models import SearchResult, SearchRun
-        run = SearchRun.objects.create(label="test", params_json={}, status="done",
-                                       found_count=1)
-        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
-                                    title="Python Developer", prescore=60)
-        resp = self.client.get(reverse("search_run", args=[run.pk]))
-        self.assertContains(resp, "Python Developer")
-
-    def test_running_page_asks_the_browser_to_refresh(self):
-        from jobs.models import SearchRun
-        run = SearchRun.objects.create(label="test", params_json={}, status="running")
-        resp = self.client.get(reverse("search_run", args=[run.pk]))
-        self.assertContains(resp, "http-equiv=\"refresh\"")
-
-    def test_finished_page_does_not_refresh(self):
-        from jobs.models import SearchRun
-        run = SearchRun.objects.create(label="test", params_json={}, status="done")
-        resp = self.client.get(reverse("search_run", args=[run.pk]))
-        self.assertNotContains(resp, "http-equiv=\"refresh\"")
 
     def test_import_post_creates_jobs_and_redirects_back(self):
         from jobs.models import SearchResult, SearchRun
@@ -2148,7 +2135,7 @@ def import_search_results(request, pk):
 - [ ] **Step 6: Rulează testele**
 
 Run: `python dashboard/manage.py test jobs`
-Expected: PASS. Testele care ating template-uri (`test_get_search_page_lists_presets`, `test_run_page_shows_results`) vor eșua cu `TemplateDoesNotExist` până la Task 9 — este așteptat; rulează-le din nou la finalul Task 9.
+Expected: PASS — toate. Task-ul ăsta nu conține niciun test care randează un template (toate ating doar formularul sau redirect-uri), deci suita trebuie să fie verde la commit. Dacă vezi `TemplateDoesNotExist`, ai scris aici un test care aparține Task-ului 9.
 
 - [ ] **Step 7: Commit**
 
@@ -2166,12 +2153,90 @@ git commit -m "feat(dashboard): SearchForm + view-uri cauta/run/import (JOB-46)"
 - Modify: `dashboard/jobs/templates/jobs/base.html`
 - Create: `dashboard/jobs/templates/jobs/cauta.html`
 - Create: `dashboard/jobs/templates/jobs/cauta_run.html`
-- Test: `dashboard/jobs/tests.py` (rulează testele din Task 8)
+- Test: `dashboard/jobs/tests.py`
 
 **Interfaces:**
 - Consumes: contextul din `search_index` / `search_run` (Task 8)
 
-- [ ] **Step 1: Extinde `base.html` — nav + CSS aditiv**
+- [ ] **Step 1: Scrie testele de randare care pică**
+
+Task 8 a lăsat intenționat testele care randează template-uri pentru task-ul
+ăsta. Adaugă în `dashboard/jobs/tests.py`:
+
+```python
+class SearchTemplateTests(TestCase):
+    def test_search_page_lists_presets(self):
+        resp = self.client.get(reverse("search_index"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "ro_remote")
+
+    def test_search_page_has_the_nav_link_marked_active(self):
+        resp = self.client.get(reverse("search_index"))
+        self.assertContains(resp, 'aria-current="page"')
+        self.assertContains(resp, "Căutare")
+
+    def test_invalid_post_redisplays_the_form_without_starting(self):
+        from jobs.models import SearchRun
+        resp = self.client.post(reverse("search_index"), {
+            "keywords": "", "location": "Berlin", "sites": ["indeed"]})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(SearchRun.objects.count(), 0)
+
+    def test_run_page_shows_results(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done",
+                                       found_count=1)
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Python Developer", prescore=60)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "Python Developer")
+
+    def test_running_page_asks_the_browser_to_refresh(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="running")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, 'http-equiv="refresh"')
+
+    def test_finished_page_does_not_refresh(self):
+        """O pagină terminată care se reîncarcă la 5s ar fi un ciclu inutil."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertNotContains(resp, 'http-equiv="refresh"')
+
+    def test_already_imported_result_cannot_be_selected_again(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        job = Job.objects.create(url="https://acme.de/jobs/1")
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Python Developer", imported_job=job)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "disabled")
+        self.assertContains(resp, "importat")
+
+    def test_empty_run_shows_a_guiding_empty_state(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "Nicio potrivire")
+
+    def test_warnings_are_shown_separately_from_errors(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(
+            label="test", params_json={}, status="done",
+            warnings_json=["[avertisment] [de/indeed] am renunțat la hours_old"],
+            errors_json=["[de/linkedin] Python Developer: 429"])
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "am renunțat la hours_old")
+        self.assertContains(resp, "Erori pe surse (1)")
+```
+
+- [ ] **Step 2: Rulează ca să vezi că pică**
+
+Run: `python dashboard/manage.py test jobs.tests.SearchTemplateTests`
+Expected: FAIL — `TemplateDoesNotExist: jobs/cauta.html`
+
+- [ ] **Step 3: Extinde `base.html` — nav + CSS aditiv**
 
 În `<nav class="side">`, între link-ul „Joburi" și „Trimise":
 
@@ -2235,7 +2300,7 @@ La finalul blocului `<style>`, înainte de `@media (max-width:720px)`:
                   border:1px solid var(--border); }
 ```
 
-- [ ] **Step 2: Creează `cauta.html`**
+- [ ] **Step 4: Creează `cauta.html`**
 
 ```html
 {% extends "jobs/base.html" %}
@@ -2405,7 +2470,7 @@ La finalul blocului `<style>`, înainte de `@media (max-width:720px)`:
 {% endblock %}
 ```
 
-- [ ] **Step 3: Creează `cauta_run.html`**
+- [ ] **Step 5: Creează `cauta_run.html`**
 
 ```html
 {% extends "jobs/base.html" %}
@@ -2551,12 +2616,12 @@ La finalul blocului `<style>`, înainte de `@media (max-width:720px)`:
 {% endblock %}
 ```
 
-- [ ] **Step 4: Rulează toate testele dashboard**
+- [ ] **Step 6: Rulează toate testele dashboard**
 
 Run: `python dashboard/manage.py test jobs`
 Expected: PASS — inclusiv testele de template din Task 8.
 
-- [ ] **Step 5: Verifică manual în browser**
+- [ ] **Step 7: Verifică manual în browser**
 
 ```bash
 python dashboard/manage.py runserver
@@ -2569,12 +2634,12 @@ Verifică pe `http://127.0.0.1:8000/cauta/`:
 - „Importă selectate" e dezactivat până bifezi ceva, iar contorul se actualizează
 - linkul „Căutare" din sidebar e marcat activ
 
-- [ ] **Step 6: Rulează ambele suite**
+- [ ] **Step 8: Rulează ambele suite**
 
 Run: `python -m pytest -q && python dashboard/manage.py test jobs`
 Expected: PASS pe amândouă.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add dashboard/jobs/templates/jobs/
