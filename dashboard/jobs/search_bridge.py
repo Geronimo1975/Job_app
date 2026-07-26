@@ -240,50 +240,76 @@ def import_results(result_ids: list[int]) -> dict:
 
     Fără apel AI: JobSpy livrează deja titlul, compania, descrierea și adesea
     emailul, deci `extract_job()` rămâne doar pentru URL-urile lipite manual.
+
+    Nicio excepție nu urcă spre view: `run_search_now`, din același fișier,
+    demonstrează că un lock SQLite (mai multe procese pe același fișier) e un
+    scenariu real, nu ipotetic. O eroare la un rezultat e contorizată în
+    `report["errors"]` și lăsată în stderr — bucla continuă cu restul, ca un
+    singur rând stricat să nu blocheze importul celorlalte sau să lase
+    `imported_count` neactualizat.
     """
-    report = {"created": 0, "updated": 0, "skipped": 0, "no_email": 0, "message": ""}
+    report = {"created": 0, "updated": 0, "skipped": 0, "no_email": 0,
+              "errors": 0, "message": ""}
     if not result_ids:
         report["message"] = "Nimic selectat — bifează cel puțin un rezultat."
         return report
 
-    results = list(SearchResult.objects.filter(pk__in=result_ids))
+    try:
+        results = list(SearchResult.objects.filter(pk__in=result_ids))
+    except Exception as e:
+        report["errors"] += 1
+        print(f"  ⚠ search_bridge: import_results — nu pot citi rezultatele "
+              f"selectate: {type(e).__name__}: {e}", file=sys.stderr)
+        report["message"] = "citirea rezultatelor selectate a eșuat — vezi log-ul serverului."
+        return report
+
     touched_runs: set[int] = set()
 
     for res in results:
-        touched_runs.add(res.run_id)
-        existing = Job.objects.filter(url=res.url).first()
+        try:
+            touched_runs.add(res.run_id)
+            existing = Job.objects.filter(url=res.url).first()
 
-        if existing and existing.send_state in LOCKED_STATES:
-            report["skipped"] += 1
-            if res.imported_job_id != existing.pk:
-                res.imported_job = existing
-                res.save(update_fields=["imported_job"])
-            continue
+            if existing and existing.send_state in LOCKED_STATES:
+                report["skipped"] += 1
+                if res.imported_job_id != existing.pk:
+                    res.imported_job = existing
+                    res.save(update_fields=["imported_job"])
+                continue
 
-        job, created = Job.objects.update_or_create(
-            url=res.url,
-            defaults={
-                "title": res.title, "company": res.company,
-                "location": res.location, "description": res.description,
-                "email_hr": res.email_hr, "language": res.language,
-                "date_posted": res.date_posted,
-                "salary_min": res.salary_min, "salary_max": res.salary_max,
-                "source": f"jobspy:{res.platform or 'unknown'}",
-                "extraction_status": "ok",
-                "send_state": "draft",
-                "raw_json": res.raw_json or {},
-            },
-        )
-        report["created" if created else "updated"] += 1
-        if not (res.email_hr or "").strip():
-            report["no_email"] += 1
-        res.imported_job = job
-        res.save(update_fields=["imported_job"])
+            job, created = Job.objects.update_or_create(
+                url=res.url,
+                defaults={
+                    "title": res.title, "company": res.company,
+                    "location": res.location, "description": res.description,
+                    "email_hr": res.email_hr, "language": res.language,
+                    "date_posted": res.date_posted,
+                    "salary_min": res.salary_min, "salary_max": res.salary_max,
+                    "source": f"jobspy:{res.platform or 'unknown'}",
+                    "extraction_status": "ok",
+                    "send_state": "draft",
+                    "raw_json": res.raw_json or {},
+                },
+            )
+            report["created" if created else "updated"] += 1
+            if not (res.email_hr or "").strip():
+                report["no_email"] += 1
+            res.imported_job = job
+            res.save(update_fields=["imported_job"])
+        except Exception as e:
+            report["errors"] += 1
+            print(f"  ⚠ search_bridge: import eșuat pentru rezultatul #{res.pk} "
+                  f"({res.url}): {type(e).__name__}: {e}", file=sys.stderr)
 
     for run_id in touched_runs:
-        run = SearchRun.objects.get(pk=run_id)
-        run.imported_count = run.results.filter(imported_job__isnull=False).count()
-        run.save(update_fields=["imported_count"])
+        try:
+            run = SearchRun.objects.get(pk=run_id)
+            run.imported_count = run.results.filter(imported_job__isnull=False).count()
+            run.save(update_fields=["imported_count"])
+        except Exception as e:
+            report["errors"] += 1
+            print(f"  ⚠ search_bridge: nu pot actualiza imported_count pentru "
+                  f"rularea #{run_id}: {type(e).__name__}: {e}", file=sys.stderr)
 
     parts = []
     if report["created"]:
@@ -295,5 +321,7 @@ def import_results(result_ids: list[int]) -> dict:
     if report["no_email"]:
         parts.append(f"{report['no_email']} fără email HR — completează-l "
                      "înainte de „Transmite”")
+    if report["errors"]:
+        parts.append(f"{report['errors']} eșuate — vezi log-ul serverului")
     report["message"] = " · ".join(parts) or "Nimic de importat."
     return report

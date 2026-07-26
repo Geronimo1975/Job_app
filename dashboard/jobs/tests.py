@@ -1,5 +1,7 @@
 """Teste dashboard jobs. Rulare: python dashboard/manage.py test jobs"""
+import io
 import os
+from contextlib import redirect_stderr
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase
@@ -961,7 +963,11 @@ class SearchWorkerTests(TestCase):
         with patch.object(SearchRun.objects, "get",
                           side_effect=OperationalError("database is locked")):
             with patch.object(connections, "close_all") as close_all:
-                search_bridge.run_search_now(999999)
+                # Eșecul e intenționat (exercită exact scenariul de lock) —
+                # redirecționăm stderr ca să nu polueze output-ul suitei cu
+                # un avertisment care nu semnalează o problemă reală aici.
+                with redirect_stderr(io.StringIO()):
+                    search_bridge.run_search_now(999999)
         close_all.assert_called_once()
 
     def test_seen_state_comes_from_the_index(self):
@@ -1109,10 +1115,12 @@ class SearchImportTests(TestCase):
         for state in ("generated", "sending"):
             Job.objects.all().delete()
             Job.objects.create(url="https://acme.de/jobs/1", title="ÎN ZBOR",
-                               send_state=state)
+                               send_state=state, email_body="pachet în lucru")
             res = self._result()
             search_bridge.import_results([res.pk])
-            self.assertEqual(Job.objects.get(url=res.url).title, "ÎN ZBOR")
+            job = Job.objects.get(url=res.url)
+            self.assertEqual(job.title, "ÎN ZBOR")
+            self.assertEqual(job.email_body, "pachet în lucru")
 
     def test_skipped_result_still_links_to_the_existing_job(self):
         from jobs import search_bridge
@@ -1141,3 +1149,32 @@ class SearchImportTests(TestCase):
         report = search_bridge.import_results([])
         self.assertEqual(report["created"], 0)
         self.assertIn("Nimic selectat", report["message"])
+
+    def test_import_continues_after_one_result_fails(self):
+        """O eroare de DB la un rezultat nu abandonează bucla și nu urcă spre view.
+
+        `run_search_now` din același fișier are try/except tocmai pentru că
+        `OperationalError: database is locked` se întâmplă în practică (SQLite
+        + mai multe procese) — `import_results` trebuie să reziste la fel.
+        """
+        from django.db.utils import OperationalError
+        from jobs import search_bridge
+
+        res_ok = self._result(url="https://acme.de/jobs/1")
+        res_bad = self._result(url="https://acme.de/jobs/2")
+        real_update_or_create = Job.objects.update_or_create
+
+        def flaky(*args, **kwargs):
+            if kwargs.get("url") == res_bad.url:
+                raise OperationalError("database is locked")
+            return real_update_or_create(*args, **kwargs)
+
+        with patch.object(Job.objects, "update_or_create", side_effect=flaky):
+            with redirect_stderr(io.StringIO()):
+                report = search_bridge.import_results([res_ok.pk, res_bad.pk])
+
+        self.assertEqual(report["created"], 1)
+        self.assertEqual(report["errors"], 1)
+        self.assertTrue(Job.objects.filter(url=res_ok.url).exists())
+        self.assertFalse(Job.objects.filter(url=res_bad.url).exists())
+        self.assertIn("eșuate", report["message"])
