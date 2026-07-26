@@ -267,6 +267,51 @@ class TestOptionalParamsAreOmitted:
         assert "linkedin_fetch_description" not in _kwargs_for(mock, "indeed")
 
 
+class TestNormalizeEnrichment:
+    def test_emails_column_fills_email_hr(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": ["jobs@testco.de"]}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "jobs@testco.de"
+
+    def test_emails_accepts_plain_string(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": "hr@testco.de"}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "hr@testco.de"
+
+    def test_first_valid_email_wins(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": ["nu-e-email", "hr@testco.de"]}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "hr@testco.de"
+
+    def test_missing_emails_leaves_field_empty(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        assert scraper._normalize_job(ROW, _q("de"))["email_hr"] == ""
+
+    def test_nan_never_becomes_the_string_nan(self, tmp_path):
+        """NaN din pandas e truthy, deci `str(x or "")` dădea literal "nan"."""
+        scraper = JobSpyScraper(CFG, tmp_path)
+        nan = float("nan")
+        row = {**ROW, "description": nan, "company": nan, "date_posted": nan,
+               "emails": nan}
+        job = scraper._normalize_job(row, _q("de"))
+        assert job["description"] == ""
+        assert job["company"] == ""
+        assert job["date_posted"] == ""
+        assert job["email_hr"] == ""
+
+    def test_raw_carries_extra_signal(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "is_remote": True, "job_type": "fulltime",
+               "currency": "EUR", "interval": "yearly",
+               "company_url": "https://testco.de"}
+        raw = scraper._normalize_job(row, _q("de"))["raw"]
+        assert raw["is_remote"] is True
+        assert raw["job_type"] == "fulltime"
+        assert raw["currency"] == "EUR"
+        assert raw["interval"] == "yearly"
+        assert raw["company_url"] == "https://testco.de"
+
+
 class TestUnknownSite:
     def test_unknown_site_is_reported_not_raised(self, tmp_path):
         scraper = JobSpyScraper(CFG, tmp_path)

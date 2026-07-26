@@ -79,8 +79,20 @@ scraping:
       sources: ["jobspy", "remote_boards", "ro_boards"]
       best_effort_sources: ["ro_boards", "linkedin"]
 
-  # Site-uri jobspy folosite per piață
+  # Site-uri jobspy folosite per piață. Suportate upstream:
+  # indeed, linkedin, glassdoor, google, zip_recruiter, bayt, naukri, bdjobs
+  # (zip_recruiter e doar US/CA; bayt/naukri/bdjobs sunt alte regiuni).
   jobspy_sites: ["indeed", "linkedin"]
+
+  # Google Jobs cere o sintaxă proprie, identică cu ce ai tasta în browser
+  # (ex. „Python Developer jobs near Berlin since yesterday"). Gol = Google
+  # nu primește termen special, deci dă rezultate slabe — completează-l dacă
+  # adaugi „google" în jobspy_sites.
+  google_search_term: ""
+
+  # Descrierile LinkedIn cer un request per job: lent, dar altfel joburile
+  # LinkedIn ajung la AI fără descriere, deci fără material pentru Anschreiben.
+  linkedin_fetch_description: false
 
   # Filtre — citite de filters/relevance.py
   filters:

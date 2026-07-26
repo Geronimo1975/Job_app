@@ -37,6 +37,34 @@ SUPPORTED_SITES = (
 WARNING_PREFIX = "[avertisment]"
 
 
+def _text(value: Any) -> str:
+    """Text curat dintr-o celulă pandas.
+
+    `NaN` e truthy, deci `str(value or "")` producea literal „nan" în
+    descrieri și companii.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float) and value != value:      # NaN != NaN
+        return ""
+    return str(value).strip()
+
+
+def _first_email(value: Any) -> str:
+    """Primul email plauzibil din coloana `emails` (listă sau string)."""
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        return ""
+    for candidate in candidates:
+        text = _text(candidate)
+        if "@" in text and "." in text.rsplit("@", 1)[-1]:
+            return text
+    return ""
+
+
 class JobSpyScraper:
     """Scraper bazat pe python-jobspy, cu o piață ca unitate de lucru."""
 
@@ -168,26 +196,34 @@ class JobSpyScraper:
     def _normalize_job(self, row: Any, q: SearchQuery) -> dict | None:
         """Transformă un rând jobspy în forma canonică."""
         try:
-            url = str(row.get("job_url", "") or "").strip()
+            url = _text(row.get("job_url"))
             # Fără URL nu există cheie de match la upsert („Apply URL"):
             # n8n ar cădea pe append și ar adăuga rânduri goale.
             if not url:
                 return None
 
-            platform = str(row.get("site", "unknown"))
+            platform = _text(row.get("site")) or "unknown"
             return make_job(
                 source=f"{platform}-{q.market_key}",
                 platform=platform,
-                title=str(row.get("title", "")),
-                company=str(row.get("company", "")),
-                location=str(row.get("location", "") or q.country),
+                title=_text(row.get("title")),
+                company=_text(row.get("company")),
+                location=_text(row.get("location")) or q.country,
                 url=url,
-                description=str(row.get("description", "") or ""),
+                description=_text(row.get("description")),
                 market_key=q.market_key,
                 language=q.language,
-                date_posted=str(row.get("date_posted", "") or ""),
+                date_posted=_text(row.get("date_posted")),
                 salary_min=row.get("min_amount"),
                 salary_max=row.get("max_amount"),
+                email_hr=_first_email(row.get("emails")),
+                raw={
+                    "is_remote": row.get("is_remote"),
+                    "job_type": _text(row.get("job_type")),
+                    "currency": _text(row.get("currency")),
+                    "interval": _text(row.get("interval")),
+                    "company_url": _text(row.get("company_url")),
+                },
             )
         except Exception:
             return None
