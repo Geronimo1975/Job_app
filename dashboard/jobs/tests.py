@@ -1042,3 +1042,102 @@ class SearchConcurrencyTests(TestCase):
             res = search_bridge.start_search(SearchWorkerTests.PARAMS)
         self.assertTrue(res["ok"])
         thread.assert_called_once()
+
+
+class SearchImportTests(TestCase):
+    def _result(self, **over):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        data = dict(run=run, url="https://acme.de/jobs/1", title="Python Developer",
+                    company="ACME", location="Berlin", platform="indeed",
+                    description="Django backend", email_hr="hr@acme.de",
+                    language="de", prescore=60)
+        data.update(over)
+        return SearchResult.objects.create(**data)
+
+    def test_import_creates_a_draft_job(self):
+        from jobs import search_bridge
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["created"], 1)
+        self.assertEqual(job.send_state, "draft")
+        self.assertEqual(job.extraction_status, "ok")
+        self.assertEqual(job.source, "jobspy:indeed")
+        self.assertEqual(job.title, "Python Developer")
+        self.assertEqual(job.email_hr, "hr@acme.de")
+
+    def test_import_links_result_to_job(self):
+        from jobs import search_bridge
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.refresh_from_db()
+        self.assertEqual(res.imported_job.url, res.url)
+
+    def test_import_never_calls_the_ai_extractor(self):
+        """JobSpy livrează deja structura — un apel AI ar fi bani aruncați."""
+        from jobs import search_bridge
+        res = self._result()
+        with patch.object(extractor, "extract_job") as ai:
+            search_bridge.import_results([res.pk])
+        ai.assert_not_called()
+
+    def test_import_updates_an_existing_draft(self):
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="titlu vechi")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(Job.objects.get(url=res.url).title, "Python Developer")
+
+    def test_import_refuses_to_overwrite_a_sent_job(self):
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="ARHIVĂ",
+                           send_state="sent", email_body="ce a plecat")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["skipped"], 1)
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(job.title, "ARHIVĂ")
+        self.assertEqual(job.email_body, "ce a plecat")
+
+    def test_import_refuses_to_overwrite_generated_and_sending(self):
+        from jobs import search_bridge
+        for state in ("generated", "sending"):
+            Job.objects.all().delete()
+            Job.objects.create(url="https://acme.de/jobs/1", title="ÎN ZBOR",
+                               send_state=state)
+            res = self._result()
+            search_bridge.import_results([res.pk])
+            self.assertEqual(Job.objects.get(url=res.url).title, "ÎN ZBOR")
+
+    def test_skipped_result_still_links_to_the_existing_job(self):
+        from jobs import search_bridge
+        job = Job.objects.create(url="https://acme.de/jobs/1", send_state="sent")
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.refresh_from_db()
+        self.assertEqual(res.imported_job_id, job.pk)
+
+    def test_report_counts_results_without_hr_email(self):
+        from jobs import search_bridge
+        res = self._result(email_hr="")
+        report = search_bridge.import_results([res.pk])
+        self.assertEqual(report["no_email"], 1)
+        self.assertIn("fără email HR", report["message"])
+
+    def test_import_updates_the_run_counter(self):
+        from jobs import search_bridge
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.run.refresh_from_db()
+        self.assertEqual(res.run.imported_count, 1)
+
+    def test_empty_selection_is_reported_not_crashed(self):
+        from jobs import search_bridge
+        report = search_bridge.import_results([])
+        self.assertEqual(report["created"], 0)
+        self.assertIn("Nimic selectat", report["message"])

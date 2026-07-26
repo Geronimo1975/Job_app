@@ -20,7 +20,7 @@ from scrapers.base import SearchQuery
 from scrapers.jobspy_scraper import JobSpyScraper, WARNING_PREFIX
 from store.seen import SeenIndex
 
-from .models import SearchResult, SearchRun
+from .models import Job, SearchResult, SearchRun
 from .sheet_bridge import load_pipeline_config
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -228,3 +228,72 @@ def _as_int(value) -> int | None:
         return int(float(value))
     except (TypeError, ValueError, OverflowError):
         return None
+
+
+# Stări în care pachetul de email e în zbor sau deja trimis: un import peste
+# ele ar distruge editările sau arhiva a ceea ce a plecat efectiv.
+LOCKED_STATES = ("generated", "sending", "sent")
+
+
+def import_results(result_ids: list[int]) -> dict:
+    """Transformă rezultatele selectate în rânduri `Job` (stare draft).
+
+    Fără apel AI: JobSpy livrează deja titlul, compania, descrierea și adesea
+    emailul, deci `extract_job()` rămâne doar pentru URL-urile lipite manual.
+    """
+    report = {"created": 0, "updated": 0, "skipped": 0, "no_email": 0, "message": ""}
+    if not result_ids:
+        report["message"] = "Nimic selectat — bifează cel puțin un rezultat."
+        return report
+
+    results = list(SearchResult.objects.filter(pk__in=result_ids))
+    touched_runs: set[int] = set()
+
+    for res in results:
+        touched_runs.add(res.run_id)
+        existing = Job.objects.filter(url=res.url).first()
+
+        if existing and existing.send_state in LOCKED_STATES:
+            report["skipped"] += 1
+            if res.imported_job_id != existing.pk:
+                res.imported_job = existing
+                res.save(update_fields=["imported_job"])
+            continue
+
+        job, created = Job.objects.update_or_create(
+            url=res.url,
+            defaults={
+                "title": res.title, "company": res.company,
+                "location": res.location, "description": res.description,
+                "email_hr": res.email_hr, "language": res.language,
+                "date_posted": res.date_posted,
+                "salary_min": res.salary_min, "salary_max": res.salary_max,
+                "source": f"jobspy:{res.platform or 'unknown'}",
+                "extraction_status": "ok",
+                "send_state": "draft",
+                "raw_json": res.raw_json or {},
+            },
+        )
+        report["created" if created else "updated"] += 1
+        if not (res.email_hr or "").strip():
+            report["no_email"] += 1
+        res.imported_job = job
+        res.save(update_fields=["imported_job"])
+
+    for run_id in touched_runs:
+        run = SearchRun.objects.get(pk=run_id)
+        run.imported_count = run.results.filter(imported_job__isnull=False).count()
+        run.save(update_fields=["imported_count"])
+
+    parts = []
+    if report["created"]:
+        parts.append(f"{report['created']} importate")
+    if report["updated"]:
+        parts.append(f"{report['updated']} actualizate")
+    if report["skipped"]:
+        parts.append(f"{report['skipped']} sărite (pachet în zbor sau deja trimis)")
+    if report["no_email"]:
+        parts.append(f"{report['no_email']} fără email HR — completează-l "
+                     "înainte de „Transmite”")
+    report["message"] = " · ".join(parts) or "Nimic de importat."
+    return report
