@@ -1202,3 +1202,94 @@ class SearchImportTests(TestCase):
         # `SearchResult.imported_job` a eșuat — dar raportul nu-l numără
         # nicăieri, tocmai pentru că un singur rezultat = o singură găleată.
         self.assertTrue(Job.objects.filter(url=res.url).exists())
+
+
+class SearchFormTests(SimpleTestCase):
+    BASE = {"keywords": "Python Developer", "location": "Berlin",
+            "country": "GERMANY", "language": "de", "sites": ["indeed"],
+            "hours_old": 72, "results_wanted": 20}
+
+    def test_valid_minimal_form(self):
+        from jobs.forms import SearchForm
+        self.assertTrue(SearchForm(self.BASE).is_valid())
+
+    def test_keywords_are_required(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "keywords": "   "})
+        self.assertFalse(form.is_valid())
+        self.assertIn("keywords", form.errors)
+
+    def test_at_least_one_site_is_required(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "sites": []})
+        self.assertFalse(form.is_valid())
+        self.assertIn("sites", form.errors)
+
+    def test_unknown_site_is_rejected(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "sites": ["monster"]})
+        self.assertFalse(form.is_valid())
+
+    def test_results_wanted_is_capped(self):
+        """Un results_wanted uriaș înseamnă minute de așteptare și 429."""
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "results_wanted": 5000})
+        self.assertFalse(form.is_valid())
+        self.assertIn("results_wanted", form.errors)
+
+    def test_empty_hours_old_means_no_filter(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "hours_old": ""})
+        self.assertTrue(form.is_valid())
+        self.assertIsNone(form.cleaned_data["hours_old"])
+
+
+# Împărțire decisă de proprietar (pre-flight JOB-46): testele care randează
+# template-uri se scriu în Task 9, lângă template-urile lor. Aici sunt DOAR
+# teste care nu ating template-uri (formular + redirect-uri).
+class SearchViewTests(TestCase):
+    def test_post_starts_a_search_and_redirects_to_the_run(self):
+        from jobs.models import SearchRun
+        with patch("jobs.views.search_bridge.threading.Thread") as thread:
+            resp = self.client.post(reverse("search_index"), {
+                "keywords": "Python Developer", "location": "Berlin",
+                "country": "GERMANY", "language": "de", "sites": ["indeed"],
+                "hours_old": 72, "results_wanted": 20,
+            })
+        run = SearchRun.objects.get()
+        # `fetch_redirect_response=False`: `search_run` randează un template
+        # (`jobs/cauta_run.html`) care nu există încă — vine în Task 9. Aici
+        # verificăm doar URL-ul de redirect, nu că ținta se randează.
+        self.assertRedirects(resp, reverse("search_run", args=[run.pk]),
+                             fetch_redirect_response=False)
+        thread.assert_called_once()
+
+    def test_import_post_creates_jobs_and_redirects_back(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        res = SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                          title="Python Developer",
+                                          platform="indeed")
+        resp = self.client.post(reverse("import_search_results", args=[run.pk]),
+                                {"result_ids": [res.pk]})
+        # Vezi comentariul de mai sus: nu urmărim redirect-ul, doar URL-ul lui.
+        self.assertRedirects(resp, reverse("search_run", args=[run.pk]),
+                             fetch_redirect_response=False)
+        self.assertTrue(Job.objects.filter(url=res.url).exists())
+
+    def test_import_get_is_not_allowed_to_change_anything(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("import_search_results", args=[run.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Job.objects.count(), 0)
+
+    def test_import_ignores_ids_from_another_run(self):
+        """Un id trimis manual nu trebuie să importe din altă rulare."""
+        from jobs.models import SearchResult, SearchRun
+        mine = SearchRun.objects.create(label="a mea", params_json={}, status="done")
+        other = SearchRun.objects.create(label="alta", params_json={}, status="done")
+        alien = SearchResult.objects.create(run=other, url="https://x.co/1")
+        self.client.post(reverse("import_search_results", args=[mine.pk]),
+                         {"result_ids": [alien.pk]})
+        self.assertEqual(Job.objects.count(), 0)

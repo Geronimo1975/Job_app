@@ -14,5 +14,9 @@ urlpatterns = [
     path("job/<int:pk>/transmit", views.transmit_job, name="transmit_job"),
     path("job/<int:pk>/doc/<str:kind>", views.serve_doc, name="serve_doc"),
     path("job/<int:pk>/att/<int:idx>", views.serve_attachment, name="serve_attachment"),
+    path("cauta/", views.search_index, name="search_index"),
+    path("cauta/<int:pk>/", views.search_run, name="search_run"),
+    path("cauta/<int:pk>/import", views.import_search_results,
+         name="import_search_results"),
     path("trimise/", views.sent_list, name="sent_list"),
 ]
