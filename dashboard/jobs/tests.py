@@ -946,6 +946,24 @@ class SearchWorkerTests(TestCase):
         self.assertEqual(run.status, "error")
         self.assertIn("jobspy a explodat", run.errors_json[0])
 
+    def test_connections_closed_even_when_run_lookup_fails(self):
+        """Regresie: `get()`-ul eșuat nu mai sare peste `connections.close_all()`.
+
+        `get()`-ul rândului e o citire SQLite dintr-un thread separat — un
+        `OperationalError` de lock e exact scenariul care motivează fix-ul.
+        Fără el, conexiunea thread-ului s-ar scurge pe această cale.
+        """
+        from django.db import connections
+        from django.db.utils import OperationalError
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+
+        with patch.object(SearchRun.objects, "get",
+                          side_effect=OperationalError("database is locked")):
+            with patch.object(connections, "close_all") as close_all:
+                search_bridge.run_search_now(999999)
+        close_all.assert_called_once()
+
     def test_seen_state_comes_from_the_index(self):
         from jobs import search_bridge
         from store.seen import APLICAT

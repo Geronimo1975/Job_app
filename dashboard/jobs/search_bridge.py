@@ -154,19 +154,15 @@ def run_search_now(run_pk: int) -> None:
     """Corpul worker-ului. Sincron — testele îl apelează direct.
 
     Nu ridică niciodată: orice eșec devine `status=error` pe rând, altfel
-    thread-ul ar muri în tăcere și rândul ar rămâne `running` pe veci. Asta
-    include și `get()`-ul rândului: e o citire SQLite dintr-un thread separat,
-    iar un `OperationalError` acolo (lock ținut de threadul de request) nu
-    trebuie să scape necontrolat — dar nici nu are un rând pe care să scrie
-    eroarea, deci ajunge doar pe stderr.
+    thread-ul ar muri în tăcere și rândul ar rămâne `running` pe veci. UN
+    SINGUR `try/except/finally` acoperă și `get()`-ul rândului (o citire
+    SQLite dintr-un thread separat, unde un `OperationalError` de lock e
+    posibil) — altfel o cale de ieșire timpurie ar sări peste `finally` și
+    ar lăsa conexiunea thread-ului nefolosită.
     """
+    run = None
     try:
         run = SearchRun.objects.get(pk=run_pk)
-    except Exception as e:
-        print(f"  ⚠ search_bridge: nu pot încărca SearchRun #{run_pk}: "
-              f"{type(e).__name__}: {e}", file=sys.stderr)
-        return
-    try:
         config = load_pipeline_config()
         query = query_from_params(run.params_json)
         jobs, messages = JobSpyScraper(config, _REPO_ROOT).scrape_query(query)
@@ -202,17 +198,25 @@ def run_search_now(run_pk: int) -> None:
         # 0 rezultate + erori = eșec real; 0 rezultate curate = doar empty state.
         run.status = SearchRun.ERROR if (not rows and run.errors_json) else SearchRun.DONE
     except Exception as e:
-        run.status = SearchRun.ERROR
-        run.errors_json = (run.errors_json or []) + [f"{type(e).__name__}: {e}"]
+        if run is None:
+            # `get()` a eșuat: nu există niciun rând pe care să scriem
+            # eroarea (pk inexistent sau lock SQLite) — doar stderr.
+            print(f"  ⚠ search_bridge: nu pot încărca SearchRun #{run_pk}: "
+                  f"{type(e).__name__}: {e}", file=sys.stderr)
+        else:
+            run.status = SearchRun.ERROR
+            run.errors_json = (run.errors_json or []) + [f"{type(e).__name__}: {e}"]
     finally:
-        run.finished_at = timezone.now()
-        # `update_fields` explicit: un `save()` fără el ar suprascrie cu
-        # snapshotul luat la începutul rulării orice câmp schimbat între
-        # timp de altcineva (ex. `imported_count` la un import concurent).
-        run.save(update_fields=[
-            "status", "found_count", "warnings_json", "errors_json", "finished_at",
-        ])
-        # Thread separat + SQLite: conexiunea trebuie închisă explicit.
+        if run is not None:
+            run.finished_at = timezone.now()
+            # `update_fields` explicit: un `save()` fără el ar suprascrie cu
+            # snapshotul luat la începutul rulării orice câmp schimbat între
+            # timp de altcineva (ex. `imported_count` la un import concurent).
+            run.save(update_fields=[
+                "status", "found_count", "warnings_json", "errors_json", "finished_at",
+            ])
+        # Thread separat + SQLite: conexiunea trebuie închisă explicit, pe
+        # ORICE cale de ieșire — inclusiv cea în care `get()`-ul eșuează.
         connections.close_all()
 
 
