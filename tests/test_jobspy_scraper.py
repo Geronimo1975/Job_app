@@ -283,6 +283,31 @@ class TestNormalizeEnrichment:
         row = {**ROW, "emails": ["nu-e-email", "hr@testco.de"]}
         assert scraper._normalize_job(row, _q("de"))["email_hr"] == "hr@testco.de"
 
+    def test_comma_joined_string_yields_only_the_first_address(self, tmp_path):
+        """FORMA REALĂ din producție: upstream face `", ".join(emails)` înainte
+        de DataFrame (`jobspy/__init__.py:141-143`), deci celula e un singur
+        string cu toate adresele. Fără spargere, tot șirul ajungea în
+        `msg["To"]` → un singur `RCPT TO:<a, b, c>` → SMTPRecipientsRefused.
+        """
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": "bewerbung@testco.de, info@testco.de, presse@testco.de"}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "bewerbung@testco.de"
+
+    def test_semicolon_separated_string_yields_only_the_first_address(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": "bewerbung@testco.de;info@testco.de"}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "bewerbung@testco.de"
+
+    def test_whitespace_separated_string_yields_only_the_first_address(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": "bewerbung@testco.de info@testco.de"}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "bewerbung@testco.de"
+
+    def test_junk_first_candidate_is_skipped_inside_a_joined_string(self, tmp_path):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        row = {**ROW, "emails": "nu-e-email, hr@testco.de"}
+        assert scraper._normalize_job(row, _q("de"))["email_hr"] == "hr@testco.de"
+
     def test_missing_emails_leaves_field_empty(self, tmp_path):
         scraper = JobSpyScraper(CFG, tmp_path)
         assert scraper._normalize_job(ROW, _q("de"))["email_hr"] == ""

@@ -9,6 +9,7 @@ rate-limit. Acum: un apel per (grup de keywords, site), rulate în paralel.
 `scrape_market()` e doar un wrapper peste el, pentru calea CLI/pipeline.
 """
 
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,10 @@ SUPPORTED_SITES = (
 # le exclude din erorile blocante, iar dashboard-ul le arată separat de erori.
 WARNING_PREFIX = "[avertisment]"
 
+# Separatorii cu care pot veni lipite mai multe adrese într-o singură celulă
+# `emails`: virgulă (forma produsă de upstream), punct-și-virgulă, spațiu.
+_EMAIL_SEPARATORS = re.compile(r"[,;\s]+")
+
 
 def _text(value: Any) -> str:
     """Text curat dintr-o celulă pandas.
@@ -51,17 +56,26 @@ def _text(value: Any) -> str:
 
 
 def _first_email(value: Any) -> str:
-    """Primul email plauzibil din coloana `emails` (listă sau string)."""
+    """Primul email plauzibil din coloana `emails`.
+
+    Forma REALĂ din producție e un singur string cu TOATE adresele lipite:
+    upstream face `", ".join(emails)` înainte de a construi DataFrame-ul
+    (`jobspy/__init__.py:141-143`), deci ramura list/tuple/set nu se execută
+    aici niciodată — rămâne doar ca plasă de siguranță dacă upstream schimbă
+    forma. Fără spargerea pe separatori, „a@x.de, b@x.de" trecea validarea
+    întreagă și ajungea în col „Kontakt Email" și în `msg["To"]` → un singur
+    `RCPT TO:<a@x.de, b@x.de>` → `SMTPRecipientsRefused`.
+    """
     if isinstance(value, str):
-        candidates = [value]
+        raw = [value]
     elif isinstance(value, (list, tuple, set)):
-        candidates = list(value)
+        raw = list(value)
     else:
         return ""
-    for candidate in candidates:
-        text = _text(candidate)
-        if "@" in text and "." in text.rsplit("@", 1)[-1]:
-            return text
+    for item in raw:
+        for candidate in _EMAIL_SEPARATORS.split(_text(item)):
+            if "@" in candidate and "." in candidate.rsplit("@", 1)[-1]:
+                return candidate
     return ""
 
 
