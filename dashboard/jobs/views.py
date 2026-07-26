@@ -13,7 +13,7 @@ from .extractor import extract_job
 from .forms import JobForm, SearchForm
 from .generation_bridge import (already_sent_in_sheet, generate_package,
                                 regenerate_pdfs, send_package)
-from .models import Job, SearchResult, SearchRun
+from .models import Job, SearchRun
 from .sheet_bridge import mark_sent_in_sheet, push_to_sheet
 
 

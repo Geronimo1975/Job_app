@@ -1293,3 +1293,70 @@ class SearchViewTests(TestCase):
         self.client.post(reverse("import_search_results", args=[mine.pk]),
                          {"result_ids": [alien.pk]})
         self.assertEqual(Job.objects.count(), 0)
+
+
+class SearchTemplateTests(TestCase):
+    def test_search_page_lists_presets(self):
+        resp = self.client.get(reverse("search_index"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "ro_remote")
+
+    def test_search_page_has_the_nav_link_marked_active(self):
+        resp = self.client.get(reverse("search_index"))
+        self.assertContains(resp, 'aria-current="page"')
+        self.assertContains(resp, "Căutare")
+
+    def test_invalid_post_redisplays_the_form_without_starting(self):
+        from jobs.models import SearchRun
+        resp = self.client.post(reverse("search_index"), {
+            "keywords": "", "location": "Berlin", "sites": ["indeed"]})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(SearchRun.objects.count(), 0)
+
+    def test_run_page_shows_results(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done",
+                                       found_count=1)
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Python Developer", prescore=60)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "Python Developer")
+
+    def test_running_page_asks_the_browser_to_refresh(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="running")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, 'http-equiv="refresh"')
+
+    def test_finished_page_does_not_refresh(self):
+        """O pagină terminată care se reîncarcă la 5s ar fi un ciclu inutil."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertNotContains(resp, 'http-equiv="refresh"')
+
+    def test_already_imported_result_cannot_be_selected_again(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        job = Job.objects.create(url="https://acme.de/jobs/1")
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Python Developer", imported_job=job)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "disabled")
+        self.assertContains(resp, "importat")
+
+    def test_empty_run_shows_a_guiding_empty_state(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "Nicio potrivire")
+
+    def test_warnings_are_shown_separately_from_errors(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(
+            label="test", params_json={}, status="done",
+            warnings_json=["[avertisment] [de/indeed] am renunțat la hours_old"],
+            errors_json=["[de/linkedin] Python Developer: 429"])
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "am renunțat la hours_old")
+        self.assertContains(resp, "Erori pe surse (1)")

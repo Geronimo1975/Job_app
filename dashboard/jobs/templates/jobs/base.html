@@ -148,6 +148,56 @@
     a.btnlike { display:inline-block; text-align:center; cursor:pointer; }
     a.btnlike:hover { text-decoration:none; opacity:.9; }
 
+    /* ── Secțiunea Căutare (adaosuri, nicio regulă existentă schimbată) ── */
+    .pill.running { background:rgba(245,158,11,.15); color:var(--warn); }
+    .pill.done    { background:rgba(34,197,94,.15);  color:var(--ok); }
+    .pill.nou     { background:rgba(76,139,245,.18); color:#7ea6f7; }
+    .pill.vazut   { background:rgba(148,163,184,.15); color:var(--muted); }
+
+    /* Filtre avansate — progressive disclosure */
+    details.adv { margin:0 0 18px; background:var(--surface);
+                  border:1px solid var(--border); border-radius:var(--radius); }
+    details.adv > summary { cursor:pointer; padding:12px 16px; font-size:14px;
+                            font-weight:600; color:var(--fg); }
+    details.adv > summary:focus-visible { outline:2px solid var(--accent);
+                                          outline-offset:2px; }
+    details.adv .adv-body { padding:4px 16px 16px; }
+    details.adv[open] > summary { border-bottom:1px solid var(--border); }
+    .hint { color:var(--muted); font-size:12px; margin:5px 0 0; }
+
+    /* Grup de checkbox-uri (site-uri) */
+    fieldset.sites { border:1px solid var(--border-strong); border-radius:var(--radius);
+                     padding:12px 14px; margin:0 0 14px; }
+    fieldset.sites legend { font-size:12px; color:var(--muted);
+                            text-transform:uppercase; letter-spacing:.04em;
+                            padding:0 6px; }
+    fieldset.sites ul { list-style:none; margin:0; padding:0; display:flex;
+                        flex-wrap:wrap; gap:8px 18px; }
+    /* 44px de zonă de atins, nu doar caseta de 18px */
+    fieldset.sites label { display:flex; align-items:center; gap:8px;
+                           min-height:44px; cursor:pointer; font-size:14px; }
+    fieldset.sites input { width:18px; height:18px; accent-color:var(--accent); }
+
+    /* Coloana de selecție din tabelul de rezultate */
+    td.checkcol, th.checkcol { width:44px; text-align:center; }
+    td.checkcol input, th.checkcol input { width:18px; height:18px;
+                                           accent-color:var(--accent);
+                                           cursor:pointer; }
+    .score { font-weight:700; font-variant-numeric:tabular-nums; }
+
+    /* Bara de acțiune în bloc */
+    .bulkbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+               margin:14px 0 0; padding:12px 16px; background:var(--surface);
+               border:1px solid var(--border-strong); border-radius:var(--radius); }
+    .bulkbar .count { color:var(--muted); font-size:14px; }
+    .btn-primary:disabled { opacity:.45; cursor:not-allowed; }
+
+    /* Chips cu parametrii rulării */
+    .chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; }
+    .chips span { font-size:12px; padding:4px 10px; border-radius:20px;
+                  background:var(--surface-2); color:var(--muted);
+                  border:1px solid var(--border); }
+
     @media (max-width:720px) {
       .layout { flex-direction:column; }
       .side { width:100%; display:flex; align-items:center; gap:6px;
@@ -170,6 +220,9 @@
       <div class="brand">Job Dashboard</div>
       <a class="nav-link {% if section == 'jobs' %}active{% endif %}"
          {% if section == 'jobs' %}aria-current="page"{% endif %} href="{% url 'index' %}">Joburi</a>
+      <a class="nav-link {% if section == 'search' %}active{% endif %}"
+         {% if section == 'search' %}aria-current="page"{% endif %}
+         href="{% url 'search_index' %}">Căutare</a>
       <a class="nav-link {% if section == 'sent' %}active{% endif %}"
          {% if section == 'sent' %}aria-current="page"{% endif %} href="{% url 'sent_list' %}">Trimise</a>
     </nav>

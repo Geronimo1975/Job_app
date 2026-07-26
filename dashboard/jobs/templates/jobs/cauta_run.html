@@ -1,0 +1,141 @@
+{% extends "jobs/base.html" %}
+{% block title %}{{ run.label }}{% endblock %}
+{% block content %}
+  {% if is_running %}
+    {# Randat DOAR cât rulează: o pagină terminată nu se mai reîncarcă. #}
+    <meta http-equiv="refresh" content="5">
+  {% endif %}
+
+  <h1>{{ run.label }}</h1>
+  <p class="sub">
+    <span class="pill {{ run.status }}">{{ run.status }}</span>
+    · {{ run.found_count }} rezultate · {{ run.imported_count }} importate
+    {% if run.duration_sec %}· {{ run.duration_sec }}s{% endif %}
+    · <a href="{% url 'search_index' %}">căutare nouă</a>
+  </p>
+
+  <div class="chips">
+    {% for site in run.params_json.sites %}<span>{{ site }}</span>{% endfor %}
+    <span>{{ run.params_json.location }}</span>
+    {% if run.params_json.remote %}<span>remote</span>{% endif %}
+    {% if run.params_json.hours_old %}<span>≤ {{ run.params_json.hours_old }}h</span>{% endif %}
+    {% if run.params_json.job_type %}<span>{{ run.params_json.job_type }}</span>{% endif %}
+  </div>
+
+  {% if is_running %}
+    <div class="banner dry" role="status" aria-live="polite">
+      Caut… pagina se reîmprospătează automat la 5 secunde.
+      <a href="{{ request.get_full_path }}">Reîmprospătează acum</a>
+    </div>
+  {% endif %}
+
+  {% if run.warnings_json %}
+    <div class="banner dry">
+      {% for w in run.warnings_json %}<div>{{ w }}</div>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if run.errors_json %}
+    <details class="adv">
+      <summary>Erori pe surse ({{ run.errors_json|length }})</summary>
+      <div class="adv-body">
+        {% for e in run.errors_json %}<p class="hint">{{ e }}</p>{% endfor %}
+      </div>
+    </details>
+  {% endif %}
+
+  {% if results %}
+  <form method="post" action="{% url 'import_search_results' run.pk %}">
+    {% csrf_token %}
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="checkcol">
+              <input type="checkbox" id="check-all" aria-label="Selectează tot">
+            </th>
+            <th {% if sort != "data" %}aria-sort="descending"{% endif %}>
+              {% if sort == "data" %}<a href="?">Scor</a>{% else %}Scor{% endif %}
+            </th>
+            <th>Titlu</th><th>Companie</th><th>Locație</th><th>Platformă</th>
+            <th>Email HR</th>
+            <th {% if sort == "data" %}aria-sort="descending"{% endif %}>
+              {% if sort == "data" %}Publicat{% else %}<a href="?sort=data">Publicat</a>{% endif %}
+            </th>
+            <th>Stare</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            <td class="checkcol">
+              <input type="checkbox" name="result_ids" value="{{ r.pk }}"
+                     {% if r.imported_job_id %}disabled{% endif %}
+                     aria-label="Selectează {{ r.title|default:'rezultatul' }}">
+            </td>
+            <td class="score num" title="{{ r.prescore_reasons_json|join:', ' }}">{{ r.prescore }}</td>
+            <td><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title|default:"(fără titlu)" }}</a></td>
+            <td>{{ r.company|default:"—" }}</td>
+            <td class="dim">{{ r.location|default:"—" }}</td>
+            <td class="dim">{{ r.platform|default:"—" }}</td>
+            <td class="mono">{{ r.email_hr|default:"—" }}</td>
+            <td class="dim num">{{ r.date_posted|default:"—" }}</td>
+            <td>
+              {% if r.imported_job_id %}
+                <a class="pill done" href="{% url 'job_detail' r.imported_job_id %}">importat</a>
+              {% elif r.seen_state %}
+                <span class="pill vazut">văzut: {{ r.seen_state }}</span>
+              {% else %}
+                <span class="pill nou">nou</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bulkbar">
+      <button type="submit" class="btn-primary" id="import-btn">Importă selectate</button>
+      <span class="count" id="import-count" role="status" aria-live="polite">
+        niciun rezultat selectat
+      </span>
+      <span class="hint">Importul creează rânduri „draft” în „Joburi”, fără apel AI.
+        Joburile deja trimise nu se suprascriu.</span>
+    </div>
+  </form>
+
+  <script>
+    // Doar confort: numără selecția și dezactivează butonul la 0. Fără JS,
+    // butonul rămâne activ și serverul validează selecția goală.
+    (function () {
+      var boxes = Array.prototype.slice.call(
+        document.querySelectorAll('input[name="result_ids"]:not([disabled])'));
+      var all = document.getElementById("check-all");
+      var btn = document.getElementById("import-btn");
+      var out = document.getElementById("import-count");
+
+      function sync() {
+        var n = boxes.filter(function (b) { return b.checked; }).length;
+        btn.disabled = n === 0;
+        out.textContent = n === 0 ? "niciun rezultat selectat"
+                                  : n + " selectate";
+      }
+
+      boxes.forEach(function (b) { b.addEventListener("change", sync); });
+      if (all) {
+        all.addEventListener("change", function () {
+          boxes.forEach(function (b) { b.checked = all.checked; });
+          sync();
+        });
+      }
+      sync();
+    })();
+  </script>
+  {% elif is_running %}
+    <div class="empty">Încă nu am rezultate — caut.</div>
+  {% else %}
+    <div class="empty">Nicio potrivire. Încearcă mai puține cuvinte-cheie,
+      crește vechimea maximă sau bifează mai multe site-uri.</div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "jobs/base.html" %}
+{% block title %}Căutare joburi{% endblock %}
+{% block content %}
+  <h1>Căutare joburi</h1>
+  <p class="sub">Caută pe Indeed, LinkedIn, Glassdoor, Google Jobs și restul
+    platformelor JobSpy. Rezultatele stau aici până le imporți — nimic nu ajunge
+    în „Joburi” fără să bifezi.</p>
+
+  {{ presets|json_script:"presets-data" }}
+
+  <form method="post" action="{% url 'search_index' %}">
+    {% csrf_token %}
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="preset-select">Preset</label>
+        <select id="preset-select">
+          {% for p in presets %}
+            <option value="{{ p.key }}">{{ p.label }} · {{ p.location }}</option>
+          {% endfor %}
+        </select>
+        <p class="hint">Completează câmpurile din <code>settings.yaml</code>.
+          Poți schimba orice după aceea.</p>
+      </div>
+
+      <div class="field">
+        <label for="{{ form.location.id_for_label }}">Locație</label>
+        {{ form.location }}
+        {% for e in form.location.errors %}<p class="hint">{{ e }}</p>{% endfor %}
+      </div>
+
+      <div class="field full">
+        <label for="{{ form.keywords.id_for_label }}">Cuvinte cheie</label>
+        {{ form.keywords }}
+        <p class="hint">{{ form.keywords.help_text }}</p>
+        {% for e in form.keywords.errors %}<p class="hint">{{ e }}</p>{% endfor %}
+      </div>
+    </div>
+
+    <details class="adv">
+      <summary>Filtre avansate</summary>
+      <div class="adv-body">
+        <fieldset class="sites">
+          <legend>Site-uri</legend>
+          {{ form.sites }}
+          {% for e in form.sites.errors %}<p class="hint">{{ e }}</p>{% endfor %}
+        </fieldset>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="{{ form.country.id_for_label }}">Țară (jobspy)</label>
+            {{ form.country }}
+            <p class="hint">{{ form.country.help_text }}</p>
+          </div>
+          <div class="field">
+            <label for="{{ form.language.id_for_label }}">Limbă</label>
+            {{ form.language }}
+            <p class="hint">{{ form.language.help_text }}</p>
+          </div>
+          <div class="field">
+            <label for="{{ form.hours_old.id_for_label }}">Vechime max. (ore)</label>
+            {{ form.hours_old }}
+            <p class="hint">Gol = fără filtru de vechime.</p>
+          </div>
+          <div class="field">
+            <label for="{{ form.results_wanted.id_for_label }}">Rezultate / apel</label>
+            {{ form.results_wanted }}
+            {% for e in form.results_wanted.errors %}<p class="hint">{{ e }}</p>{% endfor %}
+          </div>
+          <div class="field">
+            <label for="{{ form.job_type.id_for_label }}">Tip contract</label>
+            {{ form.job_type }}
+          </div>
+          <div class="field">
+            <label for="{{ form.distance.id_for_label }}">Rază (mile)</label>
+            {{ form.distance }}
+          </div>
+          <div class="field full">
+            <label for="{{ form.google_search_term.id_for_label }}">Termen Google Jobs</label>
+            {{ form.google_search_term }}
+            <p class="hint">{{ form.google_search_term.help_text }}</p>
+          </div>
+        </div>
+
+        <label class="live-toggle">{{ form.remote }}
+          <span>Doar joburi remote
+            <span class="hint">Pe Indeed, remote are prioritate față de filtrul
+              de vechime — nu pot fi trimise împreună.</span></span>
+        </label>
+        <label class="live-toggle">{{ form.linkedin_fetch_description }}
+          <span>Descrieri complete de pe LinkedIn
+            <span class="hint">{{ form.linkedin_fetch_description.help_text }}</span></span>
+        </label>
+      </div>
+    </details>
+
+    {{ form.preset }}
+    <div class="actions">
+      <button type="submit" class="btn-primary"
+              onclick="this.disabled=true;this.textContent='Pornesc căutarea…';this.form.submit()">
+        Caută
+      </button>
+    </div>
+  </form>
+
+  <h3>Rulări recente</h3>
+  {% if runs %}
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Căutare</th><th>Status</th><th>Găsite</th><th>Importate</th>
+            <th>Durată</th><th>Pornită</th></tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td><a href="{% url 'search_run' run.pk %}">{{ run.label }}</a></td>
+          <td><span class="pill {{ run.status }}">{{ run.status }}</span></td>
+          <td class="num">{{ run.found_count }}</td>
+          <td class="num">{{ run.imported_count }}</td>
+          <td class="dim num">{% if run.duration_sec %}{{ run.duration_sec }}s{% else %}—{% endif %}</td>
+          <td class="dim num">{{ run.started_at|date:"d.m H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">Nicio căutare încă. Alege un preset și apasă „Caută”.</div>
+  {% endif %}
+
+  <script>
+    // Pre-completare din preset. Formularul funcționează și fără JS: valorile
+    // presetului implicit vin randate din server.
+    (function () {
+      var data = JSON.parse(document.getElementById("presets-data").textContent);
+      var select = document.getElementById("preset-select");
+      if (!select) { return; }
+
+      function set(name, value) {
+        var el = document.querySelector('[name="' + name + '"]');
+        if (el) { el.value = value; }
+      }
+
+      function apply() {
+        var p = data.filter(function (x) { return x.key === select.value; })[0];
+        if (!p) { return; }
+        set("preset", p.key);
+        set("keywords", p.keywords);
+        set("location", p.location);
+        set("country", p.country);
+        set("language", p.language);
+        set("hours_old", p.hours_old);
+        set("results_wanted", p.results_wanted);
+        var remote = document.querySelector('[name="remote"]');
+        if (remote) { remote.checked = !!p.remote; }
+        document.querySelectorAll('[name="sites"]').forEach(function (box) {
+          box.checked = p.sites.indexOf(box.value) !== -1;
+        });
+      }
+
+      select.addEventListener("change", apply);
+    })();
+  </script>
+{% endblock %}
