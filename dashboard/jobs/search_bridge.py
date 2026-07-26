@@ -266,40 +266,51 @@ def import_results(result_ids: list[int]) -> dict:
     touched_runs: set[int] = set()
 
     for res in results:
+        # Starea per-rezultat stă în variabile locale, aplicate în contorul
+        # de raport DOAR după ce tot blocul `try` a reușit — altfel o
+        # excepție pe ultima scriere (`res.save`) ar incrementa `errors`
+        # PESTE incrementul de `created`/`updated`/`skipped`/`no_email` deja
+        # făcut mai sus în aceeași iterație, numărând un singur rezultat de
+        # două ori și contrazicând raportul.
+        outcome = None
+        no_email = False
         try:
             touched_runs.add(res.run_id)
             existing = Job.objects.filter(url=res.url).first()
 
             if existing and existing.send_state in LOCKED_STATES:
-                report["skipped"] += 1
                 if res.imported_job_id != existing.pk:
                     res.imported_job = existing
                     res.save(update_fields=["imported_job"])
-                continue
-
-            job, created = Job.objects.update_or_create(
-                url=res.url,
-                defaults={
-                    "title": res.title, "company": res.company,
-                    "location": res.location, "description": res.description,
-                    "email_hr": res.email_hr, "language": res.language,
-                    "date_posted": res.date_posted,
-                    "salary_min": res.salary_min, "salary_max": res.salary_max,
-                    "source": f"jobspy:{res.platform or 'unknown'}",
-                    "extraction_status": "ok",
-                    "send_state": "draft",
-                    "raw_json": res.raw_json or {},
-                },
-            )
-            report["created" if created else "updated"] += 1
-            if not (res.email_hr or "").strip():
-                report["no_email"] += 1
-            res.imported_job = job
-            res.save(update_fields=["imported_job"])
+                outcome = "skipped"
+            else:
+                job, created = Job.objects.update_or_create(
+                    url=res.url,
+                    defaults={
+                        "title": res.title, "company": res.company,
+                        "location": res.location, "description": res.description,
+                        "email_hr": res.email_hr, "language": res.language,
+                        "date_posted": res.date_posted,
+                        "salary_min": res.salary_min, "salary_max": res.salary_max,
+                        "source": f"jobspy:{res.platform or 'unknown'}",
+                        "extraction_status": "ok",
+                        "send_state": "draft",
+                        "raw_json": res.raw_json or {},
+                    },
+                )
+                no_email = not (res.email_hr or "").strip()
+                res.imported_job = job
+                res.save(update_fields=["imported_job"])
+                outcome = "created" if created else "updated"
         except Exception as e:
             report["errors"] += 1
             print(f"  ⚠ search_bridge: import eșuat pentru rezultatul #{res.pk} "
                   f"({res.url}): {type(e).__name__}: {e}", file=sys.stderr)
+            continue
+
+        report[outcome] += 1
+        if no_email:
+            report["no_email"] += 1
 
     for run_id in touched_runs:
         try:

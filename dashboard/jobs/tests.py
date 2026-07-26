@@ -1178,3 +1178,27 @@ class SearchImportTests(TestCase):
         self.assertTrue(Job.objects.filter(url=res_ok.url).exists())
         self.assertFalse(Job.objects.filter(url=res_bad.url).exists())
         self.assertIn("eșuate", report["message"])
+
+    def test_result_lands_in_exactly_one_bucket_when_the_final_save_fails(self):
+        """Eșecul pe ULTIMA scriere (legarea `imported_job`), nu pe
+        `update_or_create`, nu trebuie numărat de două ori — regresie:
+        incrementul de `created` se făcea înainte de acest `save`, deci un
+        rezultat ajungea în AMBELE găleți (`created` și `errors`).
+        """
+        from django.db.utils import OperationalError
+        from jobs import search_bridge
+
+        res = self._result()
+
+        with patch.object(SearchResult, "save", autospec=True,
+                          side_effect=OperationalError("database is locked")):
+            with redirect_stderr(io.StringIO()):
+                report = search_bridge.import_results([res.pk])
+
+        self.assertEqual(report["errors"], 1)
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(report["updated"], 0)
+        # `Job.objects.update_or_create` a reușit efectiv — doar legarea
+        # `SearchResult.imported_job` a eșuat — dar raportul nu-l numără
+        # nicăieri, tocmai pentru că un singur rezultat = o singură găleată.
+        self.assertTrue(Job.objects.filter(url=res.url).exists())
