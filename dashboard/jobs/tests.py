@@ -1302,9 +1302,39 @@ class SearchTemplateTests(TestCase):
         self.assertContains(resp, "ro_remote")
 
     def test_search_page_has_the_nav_link_marked_active(self):
+        # Legat de link-ul „Căutare" în sine (href + text), nu doar de prezența
+        # separată a `aria-current="page"` și a cuvântului „Căutare" oriunde pe
+        # pagină — h1-ul paginii e chiar „Căutare joburi”, deci o asersare
+        # neagățată de nimic ar trece și dacă `aria-current` ar ateriza pe alt
+        # link din sidebar.
+        import re
         resp = self.client.get(reverse("search_index"))
-        self.assertContains(resp, 'aria-current="page"')
-        self.assertContains(resp, "Căutare")
+        html = resp.content.decode()
+        url = reverse("search_index")
+        # `[^>]*` (nu `[\s\S]*`) ține potrivirea în interiorul UNUI singur tag
+        # `<a>` — altfel fereastra ar sări peste `>` în alt link din sidebar
+        # și ar valida o combinație greșită (aria-current pe alt link, iar
+        # href-ul Căutare pe un link fără aria-current).
+        self.assertRegex(
+            html,
+            r'<a\s[^>]*aria-current="page"[^>]*href="%s"[^>]*>\s*Căutare\s*</a>'
+            % re.escape(url))
+
+    def test_get_with_known_preset_seeds_the_form_from_it(self):
+        """Butonul „Încarcă preset" (fără JS) trebuie să semene formularul
+        din presetul cerut prin query string, nu doar din primul preset."""
+        from jobs import search_bridge
+        ro = next(p for p in search_bridge.presets() if p["key"] == "ro_remote")
+        resp = self.client.get(reverse("search_index"), {"preset": "ro_remote"})
+        self.assertContains(resp, ro["location"])
+        self.assertContains(resp, 'value="ro_remote" selected')
+
+    def test_get_with_unknown_preset_falls_back_to_default_without_crashing(self):
+        from jobs import search_bridge
+        resp = self.client.get(reverse("search_index"), {"preset": "does-not-exist"})
+        self.assertEqual(resp.status_code, 200)
+        default = search_bridge.presets()[0]
+        self.assertContains(resp, 'value="%s" selected' % default["key"])
 
     def test_invalid_post_redisplays_the_form_without_starting(self):
         from jobs.models import SearchRun
@@ -1336,13 +1366,21 @@ class SearchTemplateTests(TestCase):
         self.assertNotContains(resp, 'http-equiv="refresh"')
 
     def test_already_imported_result_cannot_be_selected_again(self):
+        # `assertContains(resp, "disabled")` NU ar asersa nimic real — CSS-ul
+        # `.btn-primary:disabled` din base.html conține literal cuvântul
+        # "disabled" și ajunge pe fiecare pagină, deci testul ar trece chiar
+        # dacă atributul `disabled` ar dispărea din checkbox. Legăm asersarea
+        # de checkbox-ul acestui rezultat anume.
+        import re
         from jobs.models import SearchResult, SearchRun
         run = SearchRun.objects.create(label="test", params_json={}, status="done")
         job = Job.objects.create(url="https://acme.de/jobs/1")
-        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
-                                    title="Python Developer", imported_job=job)
+        res = SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                          title="Python Developer", imported_job=job)
         resp = self.client.get(reverse("search_run", args=[run.pk]))
-        self.assertContains(resp, "disabled")
+        html = resp.content.decode()
+        self.assertRegex(
+            html, r'name="result_ids" value="%d"[^>]*disabled' % res.pk)
         self.assertContains(resp, "importat")
 
     def test_empty_run_shows_a_guiding_empty_state(self):

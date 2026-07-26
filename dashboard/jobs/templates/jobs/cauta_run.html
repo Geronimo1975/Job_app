@@ -1,8 +1,12 @@
 {% extends "jobs/base.html" %}
 {% block title %}{{ run.label }}{% endblock %}
 {% block content %}
-  {% if is_running %}
-    {# Randat DOAR cât rulează: o pagină terminată nu se mai reîncarcă. #}
+  {% if is_running and not results %}
+    {% comment %}
+      Refresh automat DOAR cât rulează ȘI încă nu sunt rezultate de bifat —
+      o dată ce apar rezultate, o reîncărcare la 5s ar șterge o selecție
+      parțial făcută. O pagină terminată nu se mai reîncarcă deloc.
+    {% endcomment %}
     <meta http-equiv="refresh" content="5">
   {% endif %}
 
@@ -16,7 +20,7 @@
 
   <div class="chips">
     {% for site in run.params_json.sites %}<span>{{ site }}</span>{% endfor %}
-    <span>{{ run.params_json.location }}</span>
+    {% if run.params_json.location %}<span>{{ run.params_json.location }}</span>{% endif %}
     {% if run.params_json.remote %}<span>remote</span>{% endif %}
     {% if run.params_json.hours_old %}<span>≤ {{ run.params_json.hours_old }}h</span>{% endif %}
     {% if run.params_json.job_type %}<span>{{ run.params_json.job_type }}</span>{% endif %}
@@ -24,7 +28,12 @@
 
   {% if is_running %}
     <div class="banner dry" role="status" aria-live="polite">
-      Caut… pagina se reîmprospătează automat la 5 secunde.
+      {% if results %}
+        Caut mai departe… nu mai reîmprospătez automat ca să nu-ți pierd
+        selecția de mai jos.
+      {% else %}
+        Caut… pagina se reîmprospătează automat la 5 secunde.
+      {% endif %}
       <a href="{{ request.get_full_path }}">Reîmprospătează acum</a>
     </div>
   {% endif %}
@@ -109,11 +118,13 @@
     // Doar confort: numără selecția și dezactivează butonul la 0. Fără JS,
     // butonul rămâne activ și serverul validează selecția goală.
     (function () {
+      var btn = document.getElementById("import-btn");
+      var out = document.getElementById("import-count");
+      if (!btn || !out) { return; }
+
       var boxes = Array.prototype.slice.call(
         document.querySelectorAll('input[name="result_ids"]:not([disabled])'));
       var all = document.getElementById("check-all");
-      var btn = document.getElementById("import-btn");
-      var out = document.getElementById("import-count");
 
       function sync() {
         var n = boxes.filter(function (b) { return b.checked; }).length;

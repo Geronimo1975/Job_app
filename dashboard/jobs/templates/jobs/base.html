@@ -124,11 +124,13 @@
                      border:1px solid var(--border-strong); font-weight:600; }
     .btn-secondary:hover { border-color:var(--accent); }
     .btn-danger { padding:11px 16px; background:var(--err); color:#fff; font-weight:600; }
-    /* Badge stare trimitere: draft → generated → sent (+ error) */
-    .pill.draft { background:rgba(148,163,184,.15); color:var(--muted); }
-    .pill.generated { background:rgba(76,139,245,.18); color:#7ea6f7; }
-    .pill.sent { background:rgba(34,197,94,.15); color:var(--ok); }
-    .pill.sending { background:rgba(245,158,11,.15); color:var(--warn); }
+    /* Badge stare trimitere: draft → generated → sent (+ error). Aceleași
+       culori se refolosesc pentru stările de căutare (vazut/nou/done/running)
+       — liste de selectori, nu declarații duplicate. */
+    .pill.draft, .pill.vazut { background:rgba(148,163,184,.15); color:var(--muted); }
+    .pill.generated, .pill.nou { background:rgba(76,139,245,.18); color:#7ea6f7; }
+    .pill.sent, .pill.done { background:rgba(34,197,94,.15); color:var(--ok); }
+    .pill.sending, .pill.running { background:rgba(245,158,11,.15); color:var(--warn); }
     /* Bannere de avertizare (confirmare transmitere) */
     .banner { padding:12px 16px; border-radius:var(--radius); margin:0 0 18px; font-size:14px;
               border:1px solid; }
@@ -148,11 +150,12 @@
     a.btnlike { display:inline-block; text-align:center; cursor:pointer; }
     a.btnlike:hover { text-decoration:none; opacity:.9; }
 
-    /* ── Secțiunea Căutare (adaosuri, nicio regulă existentă schimbată) ── */
-    .pill.running { background:rgba(245,158,11,.15); color:var(--warn); }
-    .pill.done    { background:rgba(34,197,94,.15);  color:var(--ok); }
-    .pill.nou     { background:rgba(76,139,245,.18); color:#7ea6f7; }
-    .pill.vazut   { background:rgba(148,163,184,.15); color:var(--muted); }
+    /* ── Secțiunea Căutare (adaosuri, nicio regulă PREEXISTENTĂ schimbată —
+       pastilele de mai sus au fost unite ca liste de selectori tocmai ca să
+       nu ducă la reguli duplicate) ── */
+
+    /* Erori de câmp — distincte vizual de `.hint` (text de ajutor neutru) */
+    .field-error { color:var(--err); font-size:12px; margin:5px 0 0; font-weight:600; }
 
     /* Filtre avansate — progressive disclosure */
     details.adv { margin:0 0 18px; background:var(--surface);
@@ -165,14 +168,28 @@
     details.adv[open] > summary { border-bottom:1px solid var(--border); }
     .hint { color:var(--muted); font-size:12px; margin:5px 0 0; }
 
-    /* Grup de checkbox-uri (site-uri) */
+    /* Formularul separat (GET) de alegere a presetului */
+    .preset-form { margin:0 0 18px; max-width:360px; }
+
+    /* Comutator neutru (opțiuni de căutare) — layout ca `.live-toggle`, dar
+       fără semantica de pericol (accent roșu e rezervată comutatorului LIVE
+       din transmit_confirm.html, neatins aici). */
+    .opt-toggle { display:flex; align-items:center; gap:10px; padding:12px 14px; margin:0 0 14px;
+                  background:var(--surface); border:1px solid var(--border-strong);
+                  border-radius:var(--radius); cursor:pointer; font-size:14px; }
+    .opt-toggle input { width:18px; height:18px; accent-color:var(--accent); cursor:pointer; }
+    .opt-toggle .hint { display:block; }
+
+    /* Grup de checkbox-uri (site-uri). `CheckboxSelectMultiple` din Django
+       6.0.7 randează `<div id="id_sites"><div><label>…</label></div>…</div>`
+       — fără `<ul>`/`<li>` — deci înfășurarea se aplică pe div-ul copil direct
+       al fieldset-ului, nu pe un `ul` care nu există niciodată în markup. */
     fieldset.sites { border:1px solid var(--border-strong); border-radius:var(--radius);
                      padding:12px 14px; margin:0 0 14px; }
     fieldset.sites legend { font-size:12px; color:var(--muted);
                             text-transform:uppercase; letter-spacing:.04em;
                             padding:0 6px; }
-    fieldset.sites ul { list-style:none; margin:0; padding:0; display:flex;
-                        flex-wrap:wrap; gap:8px 18px; }
+    fieldset.sites > div { display:flex; flex-wrap:wrap; gap:8px 18px; }
     /* 44px de zonă de atins, nu doar caseta de 18px */
     fieldset.sites label { display:flex; align-items:center; gap:8px;
                            min-height:44px; cursor:pointer; font-size:14px; }

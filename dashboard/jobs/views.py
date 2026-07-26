@@ -263,8 +263,12 @@ def sent_list(request):
 
 def search_index(request):
     """Secțiunea „Căutare": formular (preset + override) și istoricul rulărilor."""
+    presets = search_bridge.presets()
+    selected_preset_key = ""
+
     if request.method == "POST":
         form = SearchForm(request.POST)
+        selected_preset_key = request.POST.get("preset", "")
         if form.is_valid():
             res = search_bridge.start_search(form.cleaned_data)
             if res["ok"]:
@@ -278,14 +282,22 @@ def search_index(request):
             messages.error(request, "Formular invalid — verifică câmpurile marcate.")
     else:
         search_bridge.expire_stale_runs()
-        presets = search_bridge.presets()
-        # Presetul implicit vine randat din server, ca formularul să funcționeze
-        # și fără JavaScript.
-        form = SearchForm(initial=presets[0] if presets else None)
+        # Presetul cerut prin `?preset=` (butonul „Încarcă preset" fără JS,
+        # sau un link direct) — cu fallback pe primul preset dacă lipsește
+        # sau nu se potrivește niciunul (query string necunoscut/vechi).
+        requested_key = request.GET.get("preset")
+        selected = next((p for p in presets if p["key"] == requested_key), None)
+        if selected is None:
+            selected = presets[0] if presets else None
+        selected_preset_key = selected["key"] if selected else ""
+        # Presetul (cerut sau implicit) vine randat din server, ca formularul
+        # să funcționeze și fără JavaScript.
+        form = SearchForm(initial=selected)
 
     return render(request, "jobs/cauta.html", {
         "form": form,
-        "presets": search_bridge.presets(),
+        "presets": presets,
+        "selected_preset_key": selected_preset_key,
         "runs": SearchRun.objects.all()[:20],
         "section": "search",
     })
