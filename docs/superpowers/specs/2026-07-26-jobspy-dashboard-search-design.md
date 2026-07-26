@@ -216,8 +216,14 @@ sortabile; `aria-live` pe banner-ul de progres.
 **Fără apel AI** — JobSpy livrează deja structura, deci importul e instant și
 gratis. `extract_job()` rămâne doar pentru URL-urile lipite manual.
 
-Gardă: un `Job` în `generated` / `sending` / `sent` **nu se suprascrie
-niciodată** — ar distruge un pachet în zbor sau arhiva unui email trimis.
+Gardă: un `Job` care ține un pachet **nu se suprascrie niciodată** — ar
+distruge un pachet în zbor sau arhiva unui email trimis. „Ține un pachet"
+înseamnă `send_state` în `generated` / `sending` / `sent`, **sau** `error`
+cu `generated_at` completat: acolo trăiesc editările din Preview și calea de
+recuperare (`views.recover_job` cere `send_state == "error"`, deci o resetare
+la `draft` ar lăsa ca singură ieșire re-`Execută` — un apel AI care suprascrie
+exact acele editări). Un `error` **fără** `generated_at` (generarea însăși a
+eșuat) n-are ce pierde și rămâne reîmprospătabil de un import nou.
 Raport onest la final: „5 importate, 2 sărite (deja trimise), 3 fără email HR".
 
 ## Erori

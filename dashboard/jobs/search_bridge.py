@@ -245,6 +245,24 @@ LOCKED_STATES = ("generated", "sending", "sent")
 _PRESERVE_IF_BLANK = ("title", "company", "location", "language", "email_hr")
 
 
+def _holds_package(job: Job) -> bool:
+    """True dacă jobul ține un pachet pe care un re-import l-ar distruge.
+
+    `error` e CONDIȚIONAT de `generated_at`, nu adăugat în `LOCKED_STATES`:
+
+    - `error` FĂRĂ pachet (generarea însăși a eșuat) n-are ce pierde și
+      trebuie să rămână reîmprospătabil de un import nou;
+    - `error` CU pachet ține editările din Preview ȘI calea de recuperare —
+      `views.recover_job` cere `send_state == "error"`, deci un import care
+      l-ar reseta la `draft` face „Reactivează" inaccesibil și lasă ca
+      singură ieșire re-`Execută`, care cheltuie un apel AI și suprascrie
+      exact editările pe care starea `error` le păstra.
+    """
+    return job.send_state in LOCKED_STATES or (
+        job.send_state == "error" and job.generated_at is not None
+    )
+
+
 def import_results(result_ids: list[int]) -> dict:
     """Transformă rezultatele selectate în rânduri `Job` (stare draft).
 
@@ -288,7 +306,7 @@ def import_results(result_ids: list[int]) -> dict:
             touched_runs.add(res.run_id)
             existing = Job.objects.filter(url=res.url).first()
 
-            if existing and existing.send_state in LOCKED_STATES:
+            if existing and _holds_package(existing):
                 if res.imported_job_id != existing.pk:
                     res.imported_job = existing
                     res.save(update_fields=["imported_job"])

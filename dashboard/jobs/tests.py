@@ -1158,6 +1158,59 @@ class SearchImportTests(TestCase):
             self.assertEqual(job.title, "ÎN ZBOR")
             self.assertEqual(job.email_body, "pachet în lucru")
 
+    def test_import_refuses_to_overwrite_an_error_job_that_holds_a_package(self):
+        """`error` + `generated_at` = pachet cu editări din Preview.
+
+        Resetarea la `draft` ar tăia și calea de recuperare: `recover_job`
+        cere `send_state == "error"`, deci singura ieșire ar rămâne
+        re-`Execută` — un apel AI care suprascrie exact editările păstrate.
+        """
+        from django.utils import timezone as djtz
+        from jobs import search_bridge
+        job = Job.objects.create(url="https://acme.de/jobs/1", title="ÎN EROARE",
+                                 send_state="error", generated_at=djtz.now(),
+                                 send_error="SMTP refuzat",
+                                 anschreiben_text="editat manual")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job.refresh_from_db()
+        self.assertEqual(report["skipped"], 1)
+        self.assertEqual(job.send_state, "error")
+        self.assertEqual(job.anschreiben_text, "editat manual")
+        self.assertEqual(job.send_error, "SMTP refuzat")
+        self.assertEqual(job.title, "ÎN EROARE")
+
+    def test_recover_stays_reachable_after_an_import_attempt(self):
+        """Confirmarea consecinței: „Reactivează" funcționează în continuare."""
+        from django.utils import timezone as djtz
+        from jobs import search_bridge
+        job = Job.objects.create(url="https://acme.de/jobs/1", send_state="error",
+                                 generated_at=djtz.now(),
+                                 anschreiben_text="editat manual")
+        search_bridge.import_results([self._result().pk])
+        self.client.post(reverse("recover_job", args=[job.pk]))
+
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "generated")
+        self.assertEqual(job.anschreiben_text, "editat manual")
+
+    def test_import_refreshes_an_error_job_without_a_package(self):
+        """`error` fără `generated_at`: generarea însăși a eșuat, nu e nimic
+        de protejat — importul trebuie să-l reîmprospăteze.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="titlu vechi",
+                           send_state="error", generated_at=None)
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(report["skipped"], 0)
+        self.assertEqual(job.send_state, "draft")
+        self.assertEqual(job.title, "Python Developer")
+
     def test_skipped_result_still_links_to_the_existing_job(self):
         from jobs import search_bridge
         job = Job.objects.create(url="https://acme.de/jobs/1", send_state="sent")
