@@ -4,13 +4,16 @@ JobSpy Scraper — agregare multi-platformă, organizată pe piețe.
 Varianta veche făcea produs cartezian keywords × locații (49 de apeluri
 pentru 7 keywords și 7 orașe), din care majoritatea se loveau reciproc de
 rate-limit. Acum: un apel per (grup de keywords, site), rulate în paralel.
+
+`scrape_query()` e SINGURUL loc care apelează `jobspy.scrape_jobs()`.
+`scrape_market()` e doar un wrapper peste el, pentru calea CLI/pipeline.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from scrapers.base import Market, make_job
+from scrapers.base import Market, SearchQuery, make_job
 
 try:
     from jobspy import scrape_jobs
@@ -22,6 +25,17 @@ except ImportError:
 # Câte apeluri jobspy rulează simultan. Peste 4 crește rata de 429.
 _MAX_WORKERS = 4
 
+# Site-urile suportate de upstream. Hardcodate (nu citite din enum-ul jobspy)
+# ca formularul din dashboard să le poată afișa și când jobspy nu e instalat.
+SUPPORTED_SITES = (
+    "linkedin", "indeed", "zip_recruiter", "glassdoor",
+    "google", "bayt", "naukri", "bdjobs",
+)
+
+# Prefix pentru mesajele care raportează o degradare, nu un eșec. `ScraperAgent`
+# le exclude din erorile blocante, iar dashboard-ul le arată separat de erori.
+WARNING_PREFIX = "[avertisment]"
+
 
 class JobSpyScraper:
     """Scraper bazat pe python-jobspy, cu o piață ca unitate de lucru."""
@@ -32,65 +46,126 @@ class JobSpyScraper:
         self.scrape_config = config.get("scraping", {}) or {}
 
     def scrape_market(self, market: Market) -> tuple[list[dict], list[str]]:
-        """Caută joburi pentru o piață.
+        """Caută joburi pentru o piață (calea pipeline-ului CLI)."""
+        return self.scrape_query(market.to_query(self.scrape_config))
 
-        Întoarce `(joburi, erori)`. Erorile se întorc, nu se ridică: un site
-        blocat nu trebuie să anuleze rezultatele celorlalte.
+    def scrape_query(self, q: SearchQuery) -> tuple[list[dict], list[str]]:
+        """Rulează o interogare. Întoarce `(joburi, mesaje)`.
+
+        Mesajele nu se ridică drept excepții: un site blocat nu trebuie să
+        anuleze rezultatele celorlalte. Cele cu prefix `[avertisment]` descriu
+        o degradare (un filtru renunțat), nu un eșec.
         """
         if not HAS_JOBSPY:
             raise ImportError(
                 "python-jobspy nu este instalat. Rulează: pip install python-jobspy"
             )
 
-        sites = self.scrape_config.get("jobspy_sites", ["indeed"])
-        location = market.locations[0] if market.locations else market.country
-
-        units = [(group, site) for group in market.keyword_groups for site in sites]
-
         jobs: list[dict] = []
         errors: list[str] = []
 
+        sites = []
+        for site in q.sites:
+            if site in SUPPORTED_SITES:
+                sites.append(site)
+            else:
+                errors.append(f"[{q.market_key}/{site}] site necunoscut, ignorat")
+
+        units = [(group, site) for group in q.keyword_groups for site in sites]
+
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
             futures = {
-                pool.submit(self._call, market, group, site, location): (group, site)
+                pool.submit(self._call, q, group, site): (group, site)
                 for group, site in units
             }
             for future in as_completed(futures):
                 group, site = futures[future]
                 try:
-                    jobs.extend(future.result())
+                    found, warnings = future.result()
+                    jobs.extend(found)
+                    errors.extend(warnings)
                 except Exception as e:
-                    errors.append(f"[{market.key}/{site}] {group[0]}: {e}")
+                    errors.append(f"[{q.market_key}/{site}] {group[0]}: {e}")
 
-        return jobs, errors
+        return jobs, self._dedupe_messages(errors)
 
-    def _call(self, market: Market, group: list[str], site: str, location: str) -> list[dict]:
-        """Un singur apel jobspy. Excepțiile urcă — le prinde `scrape_market`."""
+    @staticmethod
+    def _dedupe_messages(messages: list[str]) -> list[str]:
+        """Același avertisment se repetă per (grup × site) — îl raportăm o dată."""
+        seen: set[str] = set()
+        out = []
+        for m in messages:
+            if m in seen:
+                continue
+            seen.add(m)
+            out.append(m)
+        return out
+
+    def _call(self, q: SearchQuery, group: list[str], site: str) -> tuple[list[dict], list[str]]:
+        """Un singur apel jobspy. Excepțiile urcă — le prinde `scrape_query`."""
         # Grupul de keywords devine o interogare booleană: un apel în loc de
         # câte unul per keyword.
         search_term = " OR ".join(f'"{k}"' for k in group)
 
-        df = scrape_jobs(
-            site_name=[site],
-            search_term=search_term,
-            location=location,
-            results_wanted=int(self.scrape_config.get("max_results_per_call", 50)),
-            hours_old=int(self.scrape_config.get("hours_old", 72)),
-            country_indeed=market.country,
-            is_remote=market.remote,
-        )
+        kwargs: dict[str, Any] = {
+            "site_name": [site],
+            "search_term": search_term,
+            "location": q.location,
+            "results_wanted": int(q.results_wanted),
+            "country_indeed": q.country,
+            "is_remote": q.remote,
+        }
+        # Filtrele opționale se OMIT când sunt goale: trimise ca "" / None,
+        # jobspy le-ar trata ca filtre active.
+        if q.hours_old is not None:
+            kwargs["hours_old"] = int(q.hours_old)
+        if q.job_type:
+            kwargs["job_type"] = q.job_type
+        if q.distance is not None:
+            kwargs["distance"] = int(q.distance)
+        if site == "google" and q.google_search_term:
+            kwargs["google_search_term"] = q.google_search_term
+        if site == "linkedin" and q.linkedin_fetch_description:
+            kwargs["linkedin_fetch_description"] = True
+
+        kwargs, warnings = self._sanitize(site, kwargs, q)
+
+        df = scrape_jobs(**kwargs)
 
         if df is None or df.empty:
-            return []
+            return [], warnings
 
         jobs = []
         for _, row in df.iterrows():
-            job = self._normalize_job(row, market)
+            job = self._normalize_job(row, q)
             if job:
                 jobs.append(job)
-        return jobs
+        return jobs, warnings
 
-    def _normalize_job(self, row: Any, market: Market) -> dict | None:
+    @staticmethod
+    def _sanitize(site: str, kwargs: dict, q: SearchQuery) -> tuple[dict, list[str]]:
+        """Elimină combinațiile de filtre pe care site-ul nu le acceptă.
+
+        Upstream e explicit: pe Indeed poți folosi DOAR unul din `hours_old` /
+        `(job_type & is_remote)` / `easy_apply`. Trimise împreună, unul cade
+        silențios — motiv pentru care piața `ro_remote` credea că filtrează
+        pe vechime, dar nu filtra.
+        """
+        warnings: list[str] = []
+        if (
+            site == "indeed"
+            and kwargs.get("hours_old") is not None
+            and (kwargs.get("is_remote") or kwargs.get("job_type"))
+        ):
+            kwargs.pop("hours_old")
+            warnings.append(
+                f"{WARNING_PREFIX} [{q.market_key}/indeed] am renunțat la "
+                "hours_old: Indeed nu îl combină cu is_remote/job_type "
+                "(filtrul remote are prioritate)"
+            )
+        return kwargs, warnings
+
+    def _normalize_job(self, row: Any, q: SearchQuery) -> dict | None:
         """Transformă un rând jobspy în forma canonică."""
         try:
             url = str(row.get("job_url", "") or "").strip()
@@ -101,15 +176,15 @@ class JobSpyScraper:
 
             platform = str(row.get("site", "unknown"))
             return make_job(
-                source=f"{platform}-{market.key}",
+                source=f"{platform}-{q.market_key}",
                 platform=platform,
                 title=str(row.get("title", "")),
                 company=str(row.get("company", "")),
-                location=str(row.get("location", "") or market.country),
+                location=str(row.get("location", "") or q.country),
                 url=url,
                 description=str(row.get("description", "") or ""),
-                market_key=market.key,
-                language=market.language,
+                market_key=q.market_key,
+                language=q.language,
                 date_posted=str(row.get("date_posted", "") or ""),
                 salary_min=row.get("min_amount"),
                 salary_max=row.get("max_amount"),
