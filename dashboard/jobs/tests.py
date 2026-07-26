@@ -910,6 +910,25 @@ class SearchWorkerTests(TestCase):
         self.assertGreater(res.prescore, 0)
         self.assertTrue(res.prescore_reasons_json)
 
+    def test_prescore_uses_the_searched_keywords_not_all_markets(self):
+        """`market_key="adhoc"` nu e cheie în `scraping.markets`, deci fără
+        keyword-urile căutării scorul (și ordinea implicită a tabelului,
+        `-prescore`) se dădea pe reuniunea keyword-urilor tuturor piețelor.
+        """
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(
+            label="test", params_json={**self.PARAMS, "keywords": "Game Designer"})
+        job = self._job(title="Senior Game Designer",
+                        description="Unity, level design, narrative.")
+        with patch.object(search_bridge.JobSpyScraper, "scrape_query",
+                          return_value=([job], [])):
+            search_bridge.run_search_now(run.pk)
+
+        res = run.results.get()
+        self.assertIn("cautare: Game Designer", res.prescore_reasons_json)
+        self.assertGreaterEqual(res.prescore, 15)
+
     def test_warnings_and_errors_are_split_by_prefix(self):
         from scrapers.jobspy_scraper import WARNING_PREFIX
         run = self._start(

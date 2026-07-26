@@ -62,11 +62,20 @@ def _market_keywords(job: dict, config: dict) -> list[str]:
     return [kw for group in groups for kw in group]
 
 
-def prescore(job: dict, config: dict) -> tuple[int, list[str]]:
+def prescore(job: dict, config: dict,
+             search_keywords: list[str] | None = None) -> tuple[int, list[str]]:
     """Calculează un scor 0-100 (sau HARD_REJECT) plus motivele.
 
     Motivele ajung în coloana „Keywords Match" din Sheet, ca să fie
     auditabil de ce a trecut un job.
+
+    `search_keywords` e pentru căutările AD-HOC (dashboard), care nu au o
+    piață în `scraping.markets`: fără el, `_market_keywords` cade pe reuniunea
+    keyword-urilor TUTUROR piețelor, deci o căutare de „Game Designer" era
+    punctată — și ordonată, tabelul sortează implicit pe `-prescore` — cu
+    bonusurile „Python Developer"/„AI Engineer" și nu primea niciodată un
+    motiv `cautare: …` pentru ce s-a căutat efectiv. Calea CLI nu-l dă, deci
+    scoringul pe piețe rămâne bit-identic.
     """
     title = str(job.get("title") or "")
     description = str(job.get("description") or "")
@@ -109,7 +118,9 @@ def prescore(job: dict, config: dict) -> tuple[int, list[str]]:
     # semnalul cel mai puternic — fără bonus, astfel de joburi cădeau sub
     # prag dacă titlul nu repeta și un skill primar (ex. „Python").
     keyword_bonus = 0
-    for keyword in _market_keywords(job, config):
+    keywords = (search_keywords if search_keywords is not None
+                else _market_keywords(job, config))
+    for keyword in keywords:
         if _contains(title_l, keyword.lower()):
             keyword_bonus += _W_MARKET_KEYWORD
             reasons.append(f"cautare: {keyword}")

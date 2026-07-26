@@ -171,13 +171,18 @@ def run_search_now(run_pk: int) -> None:
         run.errors_json = [m for m in messages if not m.startswith(WARNING_PREFIX)]
 
         seen = _load_seen()
+        # Căutarea din dashboard n-are piață în `scraping.markets`, deci
+        # scorul se dă pe CE A CĂUTAT operatorul, nu pe reuniunea
+        # keyword-urilor tuturor piețelor (vezi `prescore`).
+        search_keywords = [kw for group in query.keyword_groups for kw in group]
         rows, urls = [], set()
         for job in jobs:
             url = str(job.get("url") or "").strip()
             if not url or url in urls:
                 continue
             urls.add(url)
-            score, reasons = prescore(job, config)
+            score, reasons = prescore(job, config,
+                                      search_keywords=search_keywords)
             rows.append(SearchResult(
                 run=run, url=url,
                 title=job.get("title", ""), company=job.get("company", ""),
