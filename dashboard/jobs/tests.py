@@ -1219,6 +1219,31 @@ class SearchImportTests(TestCase):
         res.refresh_from_db()
         self.assertEqual(res.imported_job_id, job.pk)
 
+    def test_skipped_result_is_not_counted_as_imported(self):
+        """Rândul sărit rămâne legat de job, dar nu umflă `imported_count` —
+        altfel raportul („1 sărită") și contorul („1 importată") se contrazic.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", send_state="sent")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        res.refresh_from_db()
+        res.run.refresh_from_db()
+        self.assertEqual(report["skipped"], 1)
+        self.assertTrue(res.import_skipped)
+        self.assertIsNotNone(res.imported_job_id)
+        self.assertEqual(res.run.imported_count, 0)
+
+    def test_really_imported_result_is_not_marked_skipped(self):
+        from jobs import search_bridge
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.refresh_from_db()
+        res.run.refresh_from_db()
+        self.assertFalse(res.import_skipped)
+        self.assertEqual(res.run.imported_count, 1)
+
     def test_report_counts_results_without_hr_email(self):
         from jobs import search_bridge
         res = self._result(email_hr="")
@@ -1478,6 +1503,34 @@ class SearchTemplateTests(TestCase):
         self.assertRegex(
             html, r'name="result_ids" value="%d"[^>]*disabled' % res.pk)
         self.assertContains(resp, "importat")
+
+    def test_skipped_result_shows_a_skipped_badge_not_the_green_one(self):
+        """Badge-ul, contorul și mesajul trebuie să spună același lucru.
+
+        `assertNotContains(resp, "importat")` ar fi vacuu (antetul randează
+        „{{ imported_count }} importate"), la fel și `"pill done"` singur
+        (pastila de status a rulării `done` o conține). Rândurile ambelor
+        feluri sunt în aceeași pagină, iar asersarea e pe NUMĂRUL de pastile
+        verzi de rând: exact una, cea chiar importată.
+        """
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done",
+                                       found_count=2, imported_count=1)
+        imported = Job.objects.create(url="https://acme.de/jobs/1")
+        blocat = Job.objects.create(url="https://acme.de/jobs/2", send_state="sent")
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Chiar importat", imported_job=imported,
+                                    import_skipped=False, prescore=60)
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/2",
+                                    title="Sărit", imported_job=blocat,
+                                    import_skipped=True, prescore=50)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        html = resp.content.decode()
+
+        self.assertEqual(html.count('<a class="pill done"'), 1)
+        self.assertIn(">importat</a>", html)
+        self.assertIn(">sărit</a>", html)
+        self.assertContains(resp, "1 importate")
 
     def test_empty_run_shows_a_guiding_empty_state(self):
         from jobs.models import SearchRun

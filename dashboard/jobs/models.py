@@ -103,6 +103,14 @@ class SearchResult(models.Model):
     imported_job = models.ForeignKey("Job", null=True, blank=True,
                                      on_delete=models.SET_NULL,
                                      related_name="search_results")
+    # Rândurile SĂRITE (jobul ținea deja un pachet) sunt totuși legate prin
+    # `imported_job`, ca tabelul să ducă la jobul existent. Flagul separă
+    # „legat" de „importat": fără el, badge-ul verde și `imported_count`
+    # (care numără `imported_job__isnull=False`) ar raporta ca importat exact
+    # ce mesajul declară sărit. Nu e derivabil din starea jobului la randare:
+    # un job chiar importat ajunge `sent` pe calea normală și ar fi arătat
+    # retroactiv ca „sărit".
+    import_skipped = models.BooleanField(default=False)
     raw_json = models.JSONField(default=dict, blank=True)
 
     class Meta:

@@ -90,8 +90,11 @@
             <td class="mono">{{ r.email_hr|default:"—" }}</td>
             <td class="dim num">{{ r.date_posted|default:"—" }}</td>
             <td>
-              {% if r.imported_job_id %}
+              {% if r.imported_job_id and not r.import_skipped %}
                 <a class="pill done" href="{% url 'job_detail' r.imported_job_id %}">importat</a>
+              {% elif r.imported_job_id %}
+                <a class="pill vazut" href="{% url 'job_detail' r.imported_job_id %}"
+                   title="Jobul ține un pachet în zbor sau deja trimis — importul nu-l suprascrie">sărit</a>
               {% elif r.seen_state %}
                 <span class="pill vazut">văzut: {{ r.seen_state }}</span>
               {% else %}

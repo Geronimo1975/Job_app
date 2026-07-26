@@ -307,9 +307,13 @@ def import_results(result_ids: list[int]) -> dict:
             existing = Job.objects.filter(url=res.url).first()
 
             if existing and _holds_package(existing):
-                if res.imported_job_id != existing.pk:
+                # Legăm rândul de jobul existent (tabelul trebuie să ducă la
+                # el), dar îl marcăm SĂRIT — altfel badge-ul verde „importat"
+                # și `imported_count` ar contrazice mesajul „sărite".
+                if res.imported_job_id != existing.pk or not res.import_skipped:
                     res.imported_job = existing
-                    res.save(update_fields=["imported_job"])
+                    res.import_skipped = True
+                    res.save(update_fields=["imported_job", "import_skipped"])
                 outcome = "skipped"
             else:
                 defaults = {
@@ -340,7 +344,8 @@ def import_results(result_ids: list[int]) -> dict:
                 # `Job` cu email păstrat nu cere nicio acțiune.
                 no_email = not (job.email_hr or "").strip()
                 res.imported_job = job
-                res.save(update_fields=["imported_job"])
+                res.import_skipped = False
+                res.save(update_fields=["imported_job", "import_skipped"])
                 outcome = "created" if created else "updated"
         except Exception as e:
             report["errors"] += 1
@@ -355,7 +360,10 @@ def import_results(result_ids: list[int]) -> dict:
     for run_id in touched_runs:
         try:
             run = SearchRun.objects.get(pk=run_id)
-            run.imported_count = run.results.filter(imported_job__isnull=False).count()
+            # Rândurile sărite sunt legate de un `Job`, dar NU importate —
+            # contorul le exclude, ca să spună același lucru ca mesajul.
+            run.imported_count = run.results.filter(
+                imported_job__isnull=False, import_skipped=False).count()
             run.save(update_fields=["imported_count"])
         except Exception as e:
             report["errors"] += 1
