@@ -1097,6 +1097,42 @@ class SearchImportTests(TestCase):
         self.assertEqual(report["updated"], 1)
         self.assertEqual(Job.objects.get(url=res.url).title, "Python Developer")
 
+    def test_reimport_with_a_blank_email_keeps_the_manual_one(self):
+        """`update_or_create(defaults=)` se aplică ȘI la UPDATE: un re-import
+        al aceluiași anunț (cu `hours_old=72` reapare 3 zile la rând) ștergea
+        `email_hr` completat de mână, iar raportul cerea apoi să fie completat
+        exact ce ștersese.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", email_hr="hr@vechi.de",
+                           language="de")
+        res = self._result(email_hr="", language="")
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(job.email_hr, "hr@vechi.de")
+        self.assertEqual(job.language, "de")
+        # Nimic de completat: jobul care va fi trimis ARE adresă.
+        self.assertEqual(report["no_email"], 0)
+        self.assertNotIn("fără email HR", report["message"])
+
+    def test_reimport_still_updates_a_changed_non_empty_field(self):
+        """Garda interzice DOAR gol-peste-plin: dacă angajatorul a editat
+        titlul, valoarea nouă trebuie să intre.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="Titlu vechi",
+                           company="ACME VECHI", email_hr="hr@vechi.de")
+        res = self._result(title="Senior Python Developer", company="ACME",
+                           email_hr="nou@acme.de")
+        search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(job.title, "Senior Python Developer")
+        self.assertEqual(job.company, "ACME")
+        self.assertEqual(job.email_hr, "nou@acme.de")
+
     def test_import_refuses_to_overwrite_a_sent_job(self):
         from jobs import search_bridge
         Job.objects.create(url="https://acme.de/jobs/1", title="ARHIVĂ",

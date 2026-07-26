@@ -234,6 +234,16 @@ def _as_int(value) -> int | None:
 # ele ar distruge editările sau arhiva a ceea ce a plecat efectiv.
 LOCKED_STATES = ("generated", "sending", "sent")
 
+# Câmpuri pe care operatorul le poate corecta manual în `JobForm` (`language`
+# comandă limba Anschreiben-ului). `update_or_create(defaults=...)` aplică
+# `defaults` ȘI la UPDATE, deci un re-import al aceluiași anunț — cale de
+# rutină, cu `hours_old=72` același job reapare 3 zile la rând, iar rândul nou
+# e bifabil din nou — golea un `email_hr` completat de mână, după care raportul
+# cerea „completează-l înainte de «Transmite»" despre adresa chiar ștearsă.
+# Gardă: gol NU suprascrie niciodată plin; o valoare nouă NEgoală (angajatorul
+# a editat titlul) se scrie normal.
+_PRESERVE_IF_BLANK = ("title", "company", "location", "language", "email_hr")
+
 
 def import_results(result_ids: list[int]) -> dict:
     """Transformă rezultatele selectate în rânduri `Job` (stare draft).
@@ -284,21 +294,33 @@ def import_results(result_ids: list[int]) -> dict:
                     res.save(update_fields=["imported_job"])
                 outcome = "skipped"
             else:
+                defaults = {
+                    "title": res.title, "company": res.company,
+                    "location": res.location, "description": res.description,
+                    "email_hr": res.email_hr, "language": res.language,
+                    "date_posted": res.date_posted,
+                    "salary_min": res.salary_min, "salary_max": res.salary_max,
+                    "source": f"jobspy:{res.platform or 'unknown'}",
+                    "extraction_status": "ok",
+                    "send_state": "draft",
+                    "raw_json": res.raw_json or {},
+                }
+                if existing:
+                    # UPDATE: scoatem din `defaults` exact cheile care ar
+                    # înlocui o valoare completată manual cu un gol (vezi
+                    # `_PRESERVE_IF_BLANK`). La CREATE se scrie tot.
+                    for field in _PRESERVE_IF_BLANK:
+                        blank = not str(defaults.get(field) or "").strip()
+                        if blank and str(getattr(existing, field) or "").strip():
+                            defaults.pop(field)
                 job, created = Job.objects.update_or_create(
-                    url=res.url,
-                    defaults={
-                        "title": res.title, "company": res.company,
-                        "location": res.location, "description": res.description,
-                        "email_hr": res.email_hr, "language": res.language,
-                        "date_posted": res.date_posted,
-                        "salary_min": res.salary_min, "salary_max": res.salary_max,
-                        "source": f"jobspy:{res.platform or 'unknown'}",
-                        "extraction_status": "ok",
-                        "send_state": "draft",
-                        "raw_json": res.raw_json or {},
-                    },
+                    url=res.url, defaults=defaults,
                 )
-                no_email = not (res.email_hr or "").strip()
+                # Contorul se uită la JOBUL rezultat, nu la rândul de căutare:
+                # mesajul „completează-l înainte de «Transmite»" e o afirmație
+                # despre ce se va trimite. Un rând fără email importat peste un
+                # `Job` cu email păstrat nu cere nicio acțiune.
+                no_email = not (job.email_hr or "").strip()
                 res.imported_job = job
                 res.save(update_fields=["imported_job"])
                 outcome = "created" if created else "updated"
