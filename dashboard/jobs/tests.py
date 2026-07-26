@@ -1551,6 +1551,24 @@ class SearchTemplateTests(TestCase):
         self.assertIn(">sărit</a>", html)
         self.assertContains(resp, "1 importate")
 
+    def test_zero_second_duration_is_rendered_not_hidden(self):
+        """`{% if run.duration_sec %}` ascundea o durată legitimă de 0s
+        (căutare terminată sub o secundă) — 0 e o durată, nu absența ei."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        run.finished_at = run.started_at
+        run.save(update_fields=["finished_at"])
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "· 0s")
+
+    def test_running_run_shows_no_duration(self):
+        """Cealaltă jumătate: fără `finished_at` nu se randează nicio durată."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="running")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertNotContains(resp, "Nones")
+        self.assertNotContains(resp, "· 0s")
+
     def test_empty_run_shows_a_guiding_empty_state(self):
         from jobs.models import SearchRun
         run = SearchRun.objects.create(label="test", params_json={}, status="done")

@@ -1,11 +1,13 @@
 {% extends "jobs/base.html" %}
 {% block title %}{{ run.label }}{% endblock %}
 {% block content %}
-  {% if is_running and not results %}
+  {% if is_running %}
     {% comment %}
-      Refresh automat DOAR cât rulează ȘI încă nu sunt rezultate de bifat —
-      o dată ce apar rezultate, o reîncărcare la 5s ar șterge o selecție
-      parțial făcută. O pagină terminată nu se mai reîncarcă deloc.
+      Refresh automat DOAR cât rulează. Worker-ul scrie rezultatele într-un
+      SINGUR `bulk_create` terminal și setează `status` imediat după, deci o
+      pagină `running` n-are practic niciodată rânduri de bifat — nu există
+      selecție pe care reîncărcarea s-o piardă. O pagină terminată nu se mai
+      reîncarcă deloc.
     {% endcomment %}
     <meta http-equiv="refresh" content="5">
   {% endif %}
@@ -14,7 +16,8 @@
   <p class="sub">
     <span class="pill {{ run.status }}">{{ run.status }}</span>
     · {{ run.found_count }} rezultate · {{ run.imported_count }} importate
-    {% if run.duration_sec %}· {{ run.duration_sec }}s{% endif %}
+    {# `is not None`: o rulare de sub o secundă dă 0, care e o durată reală, nu absența ei. #}
+    {% if run.duration_sec is not None %}· {{ run.duration_sec }}s{% endif %}
     · <a href="{% url 'search_index' %}">căutare nouă</a>
   </p>
 
@@ -28,12 +31,7 @@
 
   {% if is_running %}
     <div class="banner dry" role="status" aria-live="polite">
-      {% if results %}
-        Caut mai departe… nu mai reîmprospătez automat ca să nu-ți pierd
-        selecția de mai jos.
-      {% else %}
-        Caut… pagina se reîmprospătează automat la 5 secunde.
-      {% endif %}
+      Caut… pagina se reîmprospătează automat la 5 secunde.
       <a href="{{ request.get_full_path }}">Reîmprospătează acum</a>
     </div>
   {% endif %}
