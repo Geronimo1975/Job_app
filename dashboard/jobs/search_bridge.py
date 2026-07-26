@@ -7,6 +7,7 @@ Refolosește `scrapers/` read-only, exact ca `generation_bridge` pentru
 `store/seen.py` e citit, NICIODATĂ scris: indexul de dedupe aparține
 pipeline-ului CLI, iar două procese care scriu același JSON s-ar călca.
 """
+import sys
 import threading
 from datetime import timedelta
 from pathlib import Path
@@ -16,8 +17,7 @@ from django.utils import timezone
 
 from filters.relevance import prescore
 from scrapers.base import SearchQuery
-from scrapers.jobspy_scraper import (SUPPORTED_SITES, WARNING_PREFIX,
-                                     JobSpyScraper)
+from scrapers.jobspy_scraper import JobSpyScraper, WARNING_PREFIX
 from store.seen import SeenIndex
 
 from .models import SearchResult, SearchRun
@@ -57,6 +57,13 @@ def presets() -> list[dict]:
             "sites": list(scraping.get("jobspy_sites", ["indeed"])),
             "hours_old": int(scraping.get("hours_old", 72)),
             "results_wanted": int(scraping.get("max_results_per_call", 50)),
+            # Aceleași valori implicite ca `Market.to_query` — altfel o
+            # căutare pornită dintr-un preset cu site-ul `google` bifat
+            # pierde silențios termenul special de căutare.
+            "google_search_term": str(scraping.get("google_search_term", "") or ""),
+            "linkedin_fetch_description": bool(
+                scraping.get("linkedin_fetch_description", False)
+            ),
         })
     return out
 
@@ -98,7 +105,10 @@ def label_for(params: dict) -> str:
     first = ", ".join(groups[0]) if groups else "(fără cuvinte-cheie)"
     extra = f" +{len(groups) - 1} grupuri" if len(groups) > 1 else ""
     location = params.get("location") or "?"
-    return f"{first}{extra} · {location}"
+    label = f"{first}{extra} · {location}"
+    # `SearchRun.label` are max_length=200; SQLite nu-l impune, dar Postgres
+    # ar respinge un INSERT peste limită — trunchiem defensiv.
+    return label[:190]
 
 
 def expire_stale_runs() -> int:
@@ -144,9 +154,18 @@ def run_search_now(run_pk: int) -> None:
     """Corpul worker-ului. Sincron — testele îl apelează direct.
 
     Nu ridică niciodată: orice eșec devine `status=error` pe rând, altfel
-    thread-ul ar muri în tăcere și rândul ar rămâne `running` pe veci.
+    thread-ul ar muri în tăcere și rândul ar rămâne `running` pe veci. Asta
+    include și `get()`-ul rândului: e o citire SQLite dintr-un thread separat,
+    iar un `OperationalError` acolo (lock ținut de threadul de request) nu
+    trebuie să scape necontrolat — dar nici nu are un rând pe care să scrie
+    eroarea, deci ajunge doar pe stderr.
     """
-    run = SearchRun.objects.get(pk=run_pk)
+    try:
+        run = SearchRun.objects.get(pk=run_pk)
+    except Exception as e:
+        print(f"  ⚠ search_bridge: nu pot încărca SearchRun #{run_pk}: "
+              f"{type(e).__name__}: {e}", file=sys.stderr)
+        return
     try:
         config = load_pipeline_config()
         query = query_from_params(run.params_json)
@@ -187,7 +206,12 @@ def run_search_now(run_pk: int) -> None:
         run.errors_json = (run.errors_json or []) + [f"{type(e).__name__}: {e}"]
     finally:
         run.finished_at = timezone.now()
-        run.save()
+        # `update_fields` explicit: un `save()` fără el ar suprascrie cu
+        # snapshotul luat la începutul rulării orice câmp schimbat între
+        # timp de altcineva (ex. `imported_count` la un import concurent).
+        run.save(update_fields=[
+            "status", "found_count", "warnings_json", "errors_json", "finished_at",
+        ])
         # Thread separat + SQLite: conexiunea trebuie închisă explicit.
         connections.close_all()
 
@@ -198,5 +222,5 @@ def _as_int(value) -> int | None:
         if value is None or (isinstance(value, float) and value != value):
             return None
         return int(float(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None

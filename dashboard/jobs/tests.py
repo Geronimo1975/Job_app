@@ -918,6 +918,9 @@ class SearchWorkerTests(TestCase):
         self.assertEqual(len(run.warnings_json), 1)
         self.assertEqual(len(run.errors_json), 1)
         self.assertIn("429", run.errors_json[0])
+        # Cazul cel mai frecvent în realitate: rezultate BUNE + erori pe alt
+        # site (ex. LinkedIn 429) tot înseamnă o rulare reușită, nu error.
+        self.assertEqual(run.status, "done")
 
     def test_duplicate_urls_are_collapsed(self):
         run = self._start([self._job(), self._job()], [])
@@ -954,6 +957,33 @@ class SearchWorkerTests(TestCase):
         with patch.object(search_bridge, "_load_seen", return_value=FakeIndex()):
             run = self._start([self._job()], [])
         self.assertEqual(run.results.get().seen_state, APLICAT)
+
+    def test_seen_index_is_never_written(self):
+        """`store/seen.py` aparține pipeline-ului CLI — worker-ul doar citește.
+
+        Nu verificăm prin inspecție de cod, ci prin comportament: dublul de
+        mai jos înregistrează orice apel `mark`/`save`, ca o editare
+        viitoare care ar adăuga o scriere să pice acest test, nu doar
+        recenzia.
+        """
+        from jobs import search_bridge
+
+        calls = []
+
+        class GuardedIndex:
+            def decision_for(self, job):
+                return ""
+
+            def mark(self, *args, **kwargs):
+                calls.append("mark")
+
+            def save(self, *args, **kwargs):
+                calls.append("save")
+
+        with patch.object(search_bridge, "_load_seen", return_value=GuardedIndex()):
+            run = self._start([self._job()], [])
+        self.assertEqual(calls, [])
+        self.assertEqual(run.status, "done")
 
 
 class SearchConcurrencyTests(TestCase):
