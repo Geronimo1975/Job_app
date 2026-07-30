@@ -49,6 +49,54 @@ class Market:
             )
         return markets
 
+    def to_query(self, scrape_config: dict) -> "SearchQuery":
+        """Interogarea corespunzătoare acestei piețe, cu limitele din YAML."""
+        return SearchQuery(
+            keyword_groups=self.keyword_groups,
+            sites=list(scrape_config.get("jobspy_sites", ["indeed"])),
+            # Piața fără orașe caută la nivel de țară — Indeed întoarce
+            # oricum toate orașele.
+            location=self.locations[0] if self.locations else self.country,
+            country=self.country,
+            language=self.language,
+            market_key=self.key,
+            remote=self.remote,
+            hours_old=int(scrape_config.get("hours_old", 72)),
+            results_wanted=int(scrape_config.get("max_results_per_call", 50)),
+            google_search_term=str(scrape_config.get("google_search_term", "") or ""),
+            linkedin_fetch_description=bool(
+                scrape_config.get("linkedin_fetch_description", False)
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class SearchQuery:
+    """Parametrii unei singure căutări JobSpy.
+
+    Există ca să existe UN SINGUR loc care apelează `scrape_jobs()`: piețele
+    din YAML se transformă în `SearchQuery` (`Market.to_query`), iar căutările
+    ad-hoc din dashboard construiesc direct un `SearchQuery`. Fără el,
+    dashboard-ul ar avea nevoie de al doilea wrapper JobSpy — și fiecare bug
+    upstream ar trebui reparat în două locuri.
+    """
+
+    keyword_groups: list[list[str]]
+    sites: list[str]
+    location: str
+    country: str                       # → country_indeed
+    language: str                      # → col „Sprache" → limba Anschreiben
+    market_key: str = "adhoc"
+    remote: bool = False
+    hours_old: int | None = 72
+    results_wanted: int = 50
+    # Filtrele opționale rămân goale ca să fie OMISE din apel: un `job_type`
+    # gol trimis la jobspy ar fi interpretat ca filtru activ.
+    job_type: str = ""
+    distance: int | None = None
+    google_search_term: str = ""
+    linkedin_fetch_description: bool = False
+
 
 def make_job(
     *,
@@ -59,25 +107,30 @@ def make_job(
     location: str,
     url: str,
     description: str,
-    market: Market,
+    market_key: str,
+    language: str,
     date_posted: str = "",
     salary_min=None,
     salary_max=None,
     email_hr: str = "",
+    raw: dict | None = None,
 ) -> dict:
     """Construiește forma canonică a unui job, indiferent de sursă.
 
-    `language` vine din piață și ajunge în col „Sprache" din Sheet, care
-    comandă limba scrisorii — de asta un job din RO nu primește Anschreiben
-    în germană.
+    `language` vine din piață/interogare și ajunge în col „Sprache" din Sheet,
+    care comandă limba scrisorii — de asta un job din RO nu primește
+    Anschreiben în germană.
+
+    `raw` ține câmpurile fără coloană în Sheet (is_remote, job_type, currency,
+    company_url) — utile în dashboard, ignorate la push.
     """
     now = datetime.now()
     return {
         "id": f"{source}_{abs(hash(str(url).strip()))}",
         "source": source,
         "platform": platform,
-        "market": market.key,
-        "language": market.language,
+        "market": market_key,
+        "language": language,
         "title": str(title or "").strip(),
         "company": str(company or "").strip(),
         "location": str(location or "").strip(),
@@ -89,6 +142,7 @@ def make_job(
         "salary_max": salary_max,
         "scraped_at": now.isoformat(),
         "gefunden_am": now.strftime("%Y-%m-%d"),
+        "raw": raw or {},
         "applied": False,
         # `new` nu face parte din mașina de stări a col M; `n8n_mapping`
         # îl filtrează la push, ca să nu suprascrie rânduri deja `done`.

@@ -8,11 +8,12 @@ from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from . import search_bridge
 from .extractor import extract_job
-from .forms import JobForm
+from .forms import JobForm, SearchForm
 from .generation_bridge import (already_sent_in_sheet, generate_package,
                                 regenerate_pdfs, send_package)
-from .models import Job
+from .models import Job, SearchRun
 from .sheet_bridge import mark_sent_in_sheet, push_to_sheet
 
 
@@ -258,3 +259,87 @@ def sent_list(request):
     return render(request, "jobs/sent.html", {
         "jobs": Job.objects.filter(send_state="sent"), "section": "sent",
     })
+
+
+def search_index(request):
+    """Secțiunea „Căutare": formular (preset + override) și istoricul rulărilor."""
+    presets = search_bridge.presets()
+    selected_preset_key = ""
+
+    if request.method == "POST":
+        form = SearchForm(request.POST)
+        selected_preset_key = request.POST.get("preset", "")
+        if form.is_valid():
+            res = search_bridge.start_search(form.cleaned_data)
+            if res["ok"]:
+                messages.info(request, "Căutare pornită — pagina se "
+                                       "reîmprospătează până se termină.")
+                return redirect("search_run", pk=res["run"].pk)
+            messages.error(request, res["error"])
+            if res["run"]:
+                return redirect("search_run", pk=res["run"].pk)
+        else:
+            messages.error(request, "Formular invalid — verifică câmpurile marcate.")
+    else:
+        search_bridge.expire_stale_runs()
+        # Presetul cerut prin `?preset=` (butonul „Încarcă preset" fără JS,
+        # sau un link direct) — cu fallback pe primul preset dacă lipsește
+        # sau nu se potrivește niciunul (query string necunoscut/vechi).
+        requested_key = request.GET.get("preset")
+        selected = next((p for p in presets if p["key"] == requested_key), None)
+        if selected is None:
+            selected = presets[0] if presets else None
+        selected_preset_key = selected["key"] if selected else ""
+        # Presetul (cerut sau implicit) vine randat din server, ca formularul
+        # să funcționeze și fără JavaScript.
+        form = SearchForm(initial=selected)
+
+    return render(request, "jobs/cauta.html", {
+        "form": form,
+        "presets": presets,
+        "selected_preset_key": selected_preset_key,
+        "runs": SearchRun.objects.all()[:20],
+        "section": "search",
+    })
+
+
+def search_run(request, pk):
+    """Starea unei rulări + rezultatele, cu import în bloc."""
+    run = get_object_or_404(SearchRun, pk=pk)
+    if run.status == SearchRun.RUNNING:
+        search_bridge.expire_stale_runs()
+        run.refresh_from_db()
+
+    order = "-prescore" if request.GET.get("sort") != "data" else "-date_posted"
+    return render(request, "jobs/cauta_run.html", {
+        "run": run,
+        "results": run.results.order_by(order, "pk"),
+        "sort": request.GET.get("sort", "scor"),
+        "is_running": run.status == SearchRun.RUNNING,
+        "section": "search",
+    })
+
+
+def import_search_results(request, pk):
+    """„Importă selectate" — rezultatele bifate devin rânduri Job (draft)."""
+    if request.method != "POST":
+        return redirect("search_run", pk=pk)
+    run = get_object_or_404(SearchRun, pk=pk)
+
+    # Filtrăm pe rulare: un id trimis manual nu trebuie să importe din altă listă.
+    ids = [int(i) for i in request.POST.getlist("result_ids") if str(i).isdigit()]
+    ids = list(run.results.filter(pk__in=ids).values_list("pk", flat=True))
+
+    report = search_bridge.import_results(ids)
+    # ABATERE de la brief: cu `errors` în joc (Task 7), un import cu reușite
+    # ȘI eșecuri nu trebuie să se afișeze verde ca succes deplin — devine
+    # warning chiar dacă `created`/`updated` sunt nenule.
+    if report["errors"]:
+        messages.warning(request, report["message"])
+    elif report["created"] or report["updated"]:
+        messages.success(request, report["message"])
+    elif report["skipped"]:
+        messages.warning(request, report["message"])
+    else:
+        messages.error(request, report["message"])
+    return redirect("search_run", pk=pk)

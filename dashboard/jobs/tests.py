@@ -1,12 +1,14 @@
 """Teste dashboard jobs. Rulare: python dashboard/manage.py test jobs"""
+import io
 import os
+from contextlib import redirect_stderr
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from jobs import extractor
-from jobs.models import Job
+from jobs.models import Job, SearchResult, SearchRun
 
 
 class JobModelTests(TestCase):
@@ -754,3 +756,831 @@ class RenderTests(TestCase):
         Job.objects.create(url="https://a.co/1", title="Alpha", send_state="sent")
         resp = self.client.get(reverse("index"))
         self.assertContains(resp, "GESENDET")
+
+
+class SearchModelTests(TestCase):
+    def _run(self, **over):
+        data = dict(label="de · Python Developer", params_json={"preset": "de"},
+                    status="running")
+        data.update(over)
+        return SearchRun.objects.create(**data)
+
+    def test_run_defaults(self):
+        run = self._run()
+        self.assertEqual(run.found_count, 0)
+        self.assertEqual(run.imported_count, 0)
+        self.assertEqual(run.warnings_json, [])
+        self.assertEqual(run.errors_json, [])
+        self.assertIsNone(run.finished_at)
+        self.assertIsNotNone(run.started_at)
+
+    def test_runs_are_newest_first(self):
+        first = self._run(label="prima")
+        second = self._run(label="a doua")
+        self.assertEqual(
+            list(SearchRun.objects.values_list("pk", flat=True)),
+            [second.pk, first.pk],
+        )
+
+    def test_duration_is_none_while_running(self):
+        self.assertIsNone(self._run().duration_sec)
+
+    def test_duration_counts_seconds_when_finished(self):
+        from datetime import timedelta
+        run = self._run()
+        run.finished_at = run.started_at + timedelta(seconds=42)
+        run.save()
+        self.assertEqual(run.duration_sec, 42)
+
+    def test_results_are_sorted_by_score_desc(self):
+        run = self._run()
+        SearchResult.objects.create(run=run, url="https://a.co/1", prescore=30)
+        SearchResult.objects.create(run=run, url="https://a.co/2", prescore=80)
+        self.assertEqual(
+            list(run.results.values_list("prescore", flat=True)), [80, 30]
+        )
+
+    def test_same_url_twice_in_one_run_is_rejected(self):
+        from django.db import IntegrityError
+        run = self._run()
+        SearchResult.objects.create(run=run, url="https://a.co/1")
+        with self.assertRaises(IntegrityError):
+            SearchResult.objects.create(run=run, url="https://a.co/1")
+
+    def test_same_url_in_two_runs_is_allowed(self):
+        """Fiecare rulare e un snapshot propriu — dublura se vede din badge."""
+        SearchResult.objects.create(run=self._run(), url="https://a.co/1")
+        SearchResult.objects.create(run=self._run(), url="https://a.co/1")
+        self.assertEqual(SearchResult.objects.count(), 2)
+
+    def test_deleting_run_deletes_its_results(self):
+        run = self._run()
+        SearchResult.objects.create(run=run, url="https://a.co/1")
+        run.delete()
+        self.assertEqual(SearchResult.objects.count(), 0)
+
+    def test_deleting_imported_job_keeps_the_result(self):
+        """Ștergerea unui Job nu trebuie să șteargă istoricul căutării."""
+        job = Job.objects.create(url="https://a.co/1")
+        res = SearchResult.objects.create(run=self._run(), url="https://a.co/1",
+                                          imported_job=job)
+        job.delete()
+        res.refresh_from_db()
+        self.assertIsNone(res.imported_job)
+
+
+class SearchBridgeQueryTests(TestCase):
+    def test_presets_come_from_settings_yaml(self):
+        from jobs import search_bridge
+        keys = [p["key"] for p in search_bridge.presets()]
+        self.assertIn("de", keys)
+        self.assertIn("ro_remote", keys)
+
+    def test_preset_exposes_keywords_one_group_per_line(self):
+        from jobs import search_bridge
+        de = next(p for p in search_bridge.presets() if p["key"] == "de")
+        self.assertIn("\n", de["keywords"])
+        self.assertIn("Python Developer", de["keywords"])
+
+    def test_query_from_params_parses_keyword_groups(self):
+        from jobs import search_bridge
+        q = search_bridge.query_from_params({
+            "keywords": "Python Developer, Django Developer\nAI Engineer",
+            "location": "Berlin", "country": "GERMANY", "language": "de",
+            "sites": ["indeed"], "hours_old": 48, "results_wanted": 20,
+        })
+        self.assertEqual(q.keyword_groups,
+                         [["Python Developer", "Django Developer"], ["AI Engineer"]])
+        self.assertEqual(q.hours_old, 48)
+        self.assertEqual(q.market_key, "adhoc")
+
+    def test_label_summarises_the_search(self):
+        from jobs import search_bridge
+        label = search_bridge.label_for({
+            "preset": "de", "keywords": "Python Developer\nAI Engineer",
+            "location": "Berlin",
+        })
+        self.assertIn("Python Developer", label)
+        self.assertIn("Berlin", label)
+
+
+class SearchWorkerTests(TestCase):
+    PARAMS = {
+        "preset": "de", "keywords": "Python Developer", "location": "Berlin",
+        "country": "GERMANY", "language": "de", "sites": ["indeed"],
+        "hours_old": 72, "results_wanted": 10, "remote": False,
+    }
+
+    def _job(self, **over):
+        job = {
+            "url": "https://acme.de/jobs/1", "title": "Python Developer",
+            "company": "ACME", "location": "Berlin", "platform": "indeed",
+            "description": "Django and Python backend", "email_hr": "hr@acme.de",
+            "date_posted": "2026-07-20", "language": "de",
+            "salary_min": None, "salary_max": None, "raw": {"currency": "EUR"},
+        }
+        job.update(over)
+        return job
+
+    def _start(self, jobs, errors):
+        """Pornește o rulare și execută worker-ul sincron (fără thread)."""
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json=self.PARAMS)
+        with patch.object(search_bridge.JobSpyScraper, "scrape_query",
+                          return_value=(jobs, errors)):
+            search_bridge.run_search_now(run.pk)
+        run.refresh_from_db()
+        return run
+
+    def test_successful_run_saves_results(self):
+        run = self._start([self._job()], [])
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.found_count, 1)
+        self.assertIsNotNone(run.finished_at)
+        res = run.results.get()
+        self.assertEqual(res.title, "Python Developer")
+        self.assertEqual(res.email_hr, "hr@acme.de")
+        self.assertEqual(res.platform, "indeed")
+        self.assertEqual(res.raw_json["currency"], "EUR")
+
+    def test_prescore_and_reasons_are_stored(self):
+        run = self._start([self._job()], [])
+        res = run.results.get()
+        self.assertGreater(res.prescore, 0)
+        self.assertTrue(res.prescore_reasons_json)
+
+    def test_prescore_uses_the_searched_keywords_not_all_markets(self):
+        """`market_key="adhoc"` nu e cheie în `scraping.markets`, deci fără
+        keyword-urile căutării scorul (și ordinea implicită a tabelului,
+        `-prescore`) se dădea pe reuniunea keyword-urilor tuturor piețelor.
+        """
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(
+            label="test", params_json={**self.PARAMS, "keywords": "Game Designer"})
+        job = self._job(title="Senior Game Designer",
+                        description="Unity, level design, narrative.")
+        with patch.object(search_bridge.JobSpyScraper, "scrape_query",
+                          return_value=([job], [])):
+            search_bridge.run_search_now(run.pk)
+
+        res = run.results.get()
+        self.assertIn("cautare: Game Designer", res.prescore_reasons_json)
+        self.assertGreaterEqual(res.prescore, 15)
+
+    def test_warnings_and_errors_are_split_by_prefix(self):
+        from scrapers.jobspy_scraper import WARNING_PREFIX
+        run = self._start(
+            [self._job()],
+            [f"{WARNING_PREFIX} [de/indeed] am renunțat la hours_old",
+             "[de/linkedin] Python Developer: 429"],
+        )
+        self.assertEqual(len(run.warnings_json), 1)
+        self.assertEqual(len(run.errors_json), 1)
+        self.assertIn("429", run.errors_json[0])
+        # Cazul cel mai frecvent în realitate: rezultate BUNE + erori pe alt
+        # site (ex. LinkedIn 429) tot înseamnă o rulare reușită, nu error.
+        self.assertEqual(run.status, "done")
+
+    def test_duplicate_urls_are_collapsed(self):
+        run = self._start([self._job(), self._job()], [])
+        self.assertEqual(run.found_count, 1)
+
+    def test_no_results_with_errors_is_an_error_run(self):
+        run = self._start([], ["[de/indeed] Python Developer: 500"])
+        self.assertEqual(run.status, "error")
+
+    def test_no_results_without_errors_is_a_done_run(self):
+        run = self._start([], [])
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.found_count, 0)
+
+    def test_exception_in_scraper_marks_run_as_error(self):
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json=self.PARAMS)
+        with patch.object(search_bridge.JobSpyScraper, "scrape_query",
+                          side_effect=RuntimeError("jobspy a explodat")):
+            search_bridge.run_search_now(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "error")
+        self.assertIn("jobspy a explodat", run.errors_json[0])
+
+    def test_connections_closed_even_when_run_lookup_fails(self):
+        """Regresie: `get()`-ul eșuat nu mai sare peste `connections.close_all()`.
+
+        `get()`-ul rândului e o citire SQLite dintr-un thread separat — un
+        `OperationalError` de lock e exact scenariul care motivează fix-ul.
+        Fără el, conexiunea thread-ului s-ar scurge pe această cale.
+        """
+        from django.db import connections
+        from django.db.utils import OperationalError
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+
+        with patch.object(SearchRun.objects, "get",
+                          side_effect=OperationalError("database is locked")):
+            with patch.object(connections, "close_all") as close_all:
+                # Eșecul e intenționat (exercită exact scenariul de lock) —
+                # redirecționăm stderr ca să nu polueze output-ul suitei cu
+                # un avertisment care nu semnalează o problemă reală aici.
+                with redirect_stderr(io.StringIO()):
+                    search_bridge.run_search_now(999999)
+        close_all.assert_called_once()
+
+    def test_seen_state_comes_from_the_index(self):
+        from jobs import search_bridge
+        from store.seen import APLICAT
+
+        class FakeIndex:
+            def decision_for(self, job):
+                return APLICAT
+
+        with patch.object(search_bridge, "_load_seen", return_value=FakeIndex()):
+            run = self._start([self._job()], [])
+        self.assertEqual(run.results.get().seen_state, APLICAT)
+
+    def test_seen_index_is_never_written(self):
+        """`store/seen.py` aparține pipeline-ului CLI — worker-ul doar citește.
+
+        Nu verificăm prin inspecție de cod, ci prin comportament: dublul de
+        mai jos înregistrează orice apel `mark`/`save`, ca o editare
+        viitoare care ar adăuga o scriere să pice acest test, nu doar
+        recenzia.
+        """
+        from jobs import search_bridge
+
+        calls = []
+
+        class GuardedIndex:
+            def decision_for(self, job):
+                return ""
+
+            def mark(self, *args, **kwargs):
+                calls.append("mark")
+
+            def save(self, *args, **kwargs):
+                calls.append("save")
+
+        with patch.object(search_bridge, "_load_seen", return_value=GuardedIndex()):
+            run = self._start([self._job()], [])
+        self.assertEqual(calls, [])
+        self.assertEqual(run.status, "done")
+
+
+class SearchConcurrencyTests(TestCase):
+    def test_second_search_is_refused_while_one_runs(self):
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+        SearchRun.objects.create(label="în curs", params_json={}, status="running")
+        res = search_bridge.start_search(SearchWorkerTests.PARAMS)
+        self.assertFalse(res["ok"])
+        self.assertIn("în curs", res["error"])
+
+    def test_stale_run_does_not_block_a_new_search(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+
+        old = SearchRun.objects.create(label="mort", params_json={}, status="running")
+        SearchRun.objects.filter(pk=old.pk).update(
+            started_at=timezone.now() - timedelta(minutes=25))
+
+        self.assertEqual(search_bridge.expire_stale_runs(), 1)
+        old.refresh_from_db()
+        self.assertEqual(old.status, "error")
+        self.assertIn("întrerupt", old.errors_json[0])
+
+    def test_start_search_expires_stale_runs_first(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from jobs import search_bridge
+        from jobs.models import SearchRun
+
+        old = SearchRun.objects.create(label="mort", params_json={}, status="running")
+        SearchRun.objects.filter(pk=old.pk).update(
+            started_at=timezone.now() - timedelta(minutes=25))
+
+        with patch.object(search_bridge.threading, "Thread") as thread:
+            res = search_bridge.start_search(SearchWorkerTests.PARAMS)
+        self.assertTrue(res["ok"])
+        thread.assert_called_once()
+
+
+class SearchImportTests(TestCase):
+    def _result(self, **over):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        data = dict(run=run, url="https://acme.de/jobs/1", title="Python Developer",
+                    company="ACME", location="Berlin", platform="indeed",
+                    description="Django backend", email_hr="hr@acme.de",
+                    language="de", prescore=60)
+        data.update(over)
+        return SearchResult.objects.create(**data)
+
+    def test_import_creates_a_draft_job(self):
+        from jobs import search_bridge
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["created"], 1)
+        self.assertEqual(job.send_state, "draft")
+        self.assertEqual(job.extraction_status, "ok")
+        self.assertEqual(job.source, "jobspy:indeed")
+        self.assertEqual(job.title, "Python Developer")
+        self.assertEqual(job.email_hr, "hr@acme.de")
+
+    def test_import_links_result_to_job(self):
+        from jobs import search_bridge
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.refresh_from_db()
+        self.assertEqual(res.imported_job.url, res.url)
+
+    def test_import_never_calls_the_ai_extractor(self):
+        """JobSpy livrează deja structura — un apel AI ar fi bani aruncați."""
+        from jobs import search_bridge
+        res = self._result()
+        with patch.object(extractor, "extract_job") as ai:
+            search_bridge.import_results([res.pk])
+        ai.assert_not_called()
+
+    def test_import_updates_an_existing_draft(self):
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="titlu vechi")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(Job.objects.get(url=res.url).title, "Python Developer")
+
+    def test_reimport_with_a_blank_email_keeps_the_manual_one(self):
+        """`update_or_create(defaults=)` se aplică ȘI la UPDATE: un re-import
+        al aceluiași anunț (cu `hours_old=72` reapare 3 zile la rând) ștergea
+        `email_hr` completat de mână, iar raportul cerea apoi să fie completat
+        exact ce ștersese.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", email_hr="hr@vechi.de",
+                           language="de")
+        res = self._result(email_hr="", language="")
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(job.email_hr, "hr@vechi.de")
+        self.assertEqual(job.language, "de")
+        # Nimic de completat: jobul care va fi trimis ARE adresă.
+        self.assertEqual(report["no_email"], 0)
+        self.assertNotIn("fără email HR", report["message"])
+
+    def test_reimport_still_updates_a_changed_non_empty_field(self):
+        """Garda interzice DOAR gol-peste-plin: dacă angajatorul a editat
+        titlul, valoarea nouă trebuie să intre.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="Titlu vechi",
+                           company="ACME VECHI", email_hr="hr@vechi.de")
+        res = self._result(title="Senior Python Developer", company="ACME",
+                           email_hr="nou@acme.de")
+        search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(job.title, "Senior Python Developer")
+        self.assertEqual(job.company, "ACME")
+        self.assertEqual(job.email_hr, "nou@acme.de")
+
+    def test_import_refuses_to_overwrite_a_sent_job(self):
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="ARHIVĂ",
+                           send_state="sent", email_body="ce a plecat")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["skipped"], 1)
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(job.title, "ARHIVĂ")
+        self.assertEqual(job.email_body, "ce a plecat")
+
+    def test_import_refuses_to_overwrite_generated_and_sending(self):
+        from jobs import search_bridge
+        for state in ("generated", "sending"):
+            Job.objects.all().delete()
+            Job.objects.create(url="https://acme.de/jobs/1", title="ÎN ZBOR",
+                               send_state=state, email_body="pachet în lucru")
+            res = self._result()
+            search_bridge.import_results([res.pk])
+            job = Job.objects.get(url=res.url)
+            self.assertEqual(job.title, "ÎN ZBOR")
+            self.assertEqual(job.email_body, "pachet în lucru")
+
+    def test_import_refuses_to_overwrite_an_error_job_that_holds_a_package(self):
+        """`error` + `generated_at` = pachet cu editări din Preview.
+
+        Resetarea la `draft` ar tăia și calea de recuperare: `recover_job`
+        cere `send_state == "error"`, deci singura ieșire ar rămâne
+        re-`Execută` — un apel AI care suprascrie exact editările păstrate.
+        """
+        from django.utils import timezone as djtz
+        from jobs import search_bridge
+        job = Job.objects.create(url="https://acme.de/jobs/1", title="ÎN EROARE",
+                                 send_state="error", generated_at=djtz.now(),
+                                 send_error="SMTP refuzat",
+                                 anschreiben_text="editat manual")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job.refresh_from_db()
+        self.assertEqual(report["skipped"], 1)
+        self.assertEqual(job.send_state, "error")
+        self.assertEqual(job.anschreiben_text, "editat manual")
+        self.assertEqual(job.send_error, "SMTP refuzat")
+        self.assertEqual(job.title, "ÎN EROARE")
+
+    def test_recover_stays_reachable_after_an_import_attempt(self):
+        """Confirmarea consecinței: „Reactivează" funcționează în continuare."""
+        from django.utils import timezone as djtz
+        from jobs import search_bridge
+        job = Job.objects.create(url="https://acme.de/jobs/1", send_state="error",
+                                 generated_at=djtz.now(),
+                                 anschreiben_text="editat manual")
+        search_bridge.import_results([self._result().pk])
+        self.client.post(reverse("recover_job", args=[job.pk]))
+
+        job.refresh_from_db()
+        self.assertEqual(job.send_state, "generated")
+        self.assertEqual(job.anschreiben_text, "editat manual")
+
+    def test_import_refreshes_an_error_job_without_a_package(self):
+        """`error` fără `generated_at`: generarea însăși a eșuat, nu e nimic
+        de protejat — importul trebuie să-l reîmprospăteze.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", title="titlu vechi",
+                           send_state="error", generated_at=None)
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        job = Job.objects.get(url=res.url)
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(report["skipped"], 0)
+        self.assertEqual(job.send_state, "draft")
+        self.assertEqual(job.title, "Python Developer")
+
+    def test_skipped_result_still_links_to_the_existing_job(self):
+        from jobs import search_bridge
+        job = Job.objects.create(url="https://acme.de/jobs/1", send_state="sent")
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.refresh_from_db()
+        self.assertEqual(res.imported_job_id, job.pk)
+
+    def test_skipped_result_is_not_counted_as_imported(self):
+        """Rândul sărit rămâne legat de job, dar nu umflă `imported_count` —
+        altfel raportul („1 sărită") și contorul („1 importată") se contrazic.
+        """
+        from jobs import search_bridge
+        Job.objects.create(url="https://acme.de/jobs/1", send_state="sent")
+        res = self._result()
+        report = search_bridge.import_results([res.pk])
+
+        res.refresh_from_db()
+        res.run.refresh_from_db()
+        self.assertEqual(report["skipped"], 1)
+        self.assertTrue(res.import_skipped)
+        self.assertIsNotNone(res.imported_job_id)
+        self.assertEqual(res.run.imported_count, 0)
+
+    def test_really_imported_result_is_not_marked_skipped(self):
+        from jobs import search_bridge
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.refresh_from_db()
+        res.run.refresh_from_db()
+        self.assertFalse(res.import_skipped)
+        self.assertEqual(res.run.imported_count, 1)
+
+    def test_report_counts_results_without_hr_email(self):
+        from jobs import search_bridge
+        res = self._result(email_hr="")
+        report = search_bridge.import_results([res.pk])
+        self.assertEqual(report["no_email"], 1)
+        self.assertIn("fără email HR", report["message"])
+
+    def test_import_updates_the_run_counter(self):
+        from jobs import search_bridge
+        res = self._result()
+        search_bridge.import_results([res.pk])
+        res.run.refresh_from_db()
+        self.assertEqual(res.run.imported_count, 1)
+
+    def test_empty_selection_is_reported_not_crashed(self):
+        from jobs import search_bridge
+        report = search_bridge.import_results([])
+        self.assertEqual(report["created"], 0)
+        self.assertIn("Nimic selectat", report["message"])
+
+    def test_import_continues_after_one_result_fails(self):
+        """O eroare de DB la un rezultat nu abandonează bucla și nu urcă spre view.
+
+        `run_search_now` din același fișier are try/except tocmai pentru că
+        `OperationalError: database is locked` se întâmplă în practică (SQLite
+        + mai multe procese) — `import_results` trebuie să reziste la fel.
+        """
+        from django.db.utils import OperationalError
+        from jobs import search_bridge
+
+        res_ok = self._result(url="https://acme.de/jobs/1")
+        res_bad = self._result(url="https://acme.de/jobs/2")
+        real_update_or_create = Job.objects.update_or_create
+
+        def flaky(*args, **kwargs):
+            if kwargs.get("url") == res_bad.url:
+                raise OperationalError("database is locked")
+            return real_update_or_create(*args, **kwargs)
+
+        with patch.object(Job.objects, "update_or_create", side_effect=flaky):
+            with redirect_stderr(io.StringIO()):
+                report = search_bridge.import_results([res_ok.pk, res_bad.pk])
+
+        self.assertEqual(report["created"], 1)
+        self.assertEqual(report["errors"], 1)
+        self.assertTrue(Job.objects.filter(url=res_ok.url).exists())
+        self.assertFalse(Job.objects.filter(url=res_bad.url).exists())
+        self.assertIn("eșuate", report["message"])
+
+    def test_result_lands_in_exactly_one_bucket_when_the_final_save_fails(self):
+        """Eșecul pe ULTIMA scriere (legarea `imported_job`), nu pe
+        `update_or_create`, nu trebuie numărat de două ori — regresie:
+        incrementul de `created` se făcea înainte de acest `save`, deci un
+        rezultat ajungea în AMBELE găleți (`created` și `errors`).
+        """
+        from django.db.utils import OperationalError
+        from jobs import search_bridge
+
+        res = self._result()
+
+        with patch.object(SearchResult, "save", autospec=True,
+                          side_effect=OperationalError("database is locked")):
+            with redirect_stderr(io.StringIO()):
+                report = search_bridge.import_results([res.pk])
+
+        self.assertEqual(report["errors"], 1)
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(report["updated"], 0)
+        # `Job.objects.update_or_create` a reușit efectiv — doar legarea
+        # `SearchResult.imported_job` a eșuat — dar raportul nu-l numără
+        # nicăieri, tocmai pentru că un singur rezultat = o singură găleată.
+        self.assertTrue(Job.objects.filter(url=res.url).exists())
+
+
+class SearchFormTests(SimpleTestCase):
+    BASE = {"keywords": "Python Developer", "location": "Berlin",
+            "country": "GERMANY", "language": "de", "sites": ["indeed"],
+            "hours_old": 72, "results_wanted": 20}
+
+    def test_valid_minimal_form(self):
+        from jobs.forms import SearchForm
+        self.assertTrue(SearchForm(self.BASE).is_valid())
+
+    def test_keywords_are_required(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "keywords": "   "})
+        self.assertFalse(form.is_valid())
+        self.assertIn("keywords", form.errors)
+
+    def test_at_least_one_site_is_required(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "sites": []})
+        self.assertFalse(form.is_valid())
+        self.assertIn("sites", form.errors)
+
+    def test_unknown_site_is_rejected(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "sites": ["monster"]})
+        self.assertFalse(form.is_valid())
+
+    def test_results_wanted_is_capped(self):
+        """Un results_wanted uriaș înseamnă minute de așteptare și 429."""
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "results_wanted": 5000})
+        self.assertFalse(form.is_valid())
+        self.assertIn("results_wanted", form.errors)
+
+    def test_empty_hours_old_means_no_filter(self):
+        from jobs.forms import SearchForm
+        form = SearchForm({**self.BASE, "hours_old": ""})
+        self.assertTrue(form.is_valid())
+        self.assertIsNone(form.cleaned_data["hours_old"])
+
+
+# Împărțire decisă de proprietar (pre-flight JOB-46): testele care randează
+# template-uri se scriu în Task 9, lângă template-urile lor. Aici sunt DOAR
+# teste care nu ating template-uri (formular + redirect-uri).
+class SearchViewTests(TestCase):
+    def test_post_starts_a_search_and_redirects_to_the_run(self):
+        from jobs.models import SearchRun
+        with patch("jobs.views.search_bridge.threading.Thread") as thread:
+            resp = self.client.post(reverse("search_index"), {
+                "keywords": "Python Developer", "location": "Berlin",
+                "country": "GERMANY", "language": "de", "sites": ["indeed"],
+                "hours_old": 72, "results_wanted": 20,
+            })
+        run = SearchRun.objects.get()
+        # `fetch_redirect_response=False`: `search_run` randează un template
+        # (`jobs/cauta_run.html`) care nu există încă — vine în Task 9. Aici
+        # verificăm doar URL-ul de redirect, nu că ținta se randează.
+        self.assertRedirects(resp, reverse("search_run", args=[run.pk]),
+                             fetch_redirect_response=False)
+        thread.assert_called_once()
+
+    def test_import_post_creates_jobs_and_redirects_back(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        res = SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                          title="Python Developer",
+                                          platform="indeed")
+        resp = self.client.post(reverse("import_search_results", args=[run.pk]),
+                                {"result_ids": [res.pk]})
+        # Vezi comentariul de mai sus: nu urmărim redirect-ul, doar URL-ul lui.
+        self.assertRedirects(resp, reverse("search_run", args=[run.pk]),
+                             fetch_redirect_response=False)
+        self.assertTrue(Job.objects.filter(url=res.url).exists())
+
+    def test_import_get_is_not_allowed_to_change_anything(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("import_search_results", args=[run.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Job.objects.count(), 0)
+
+    def test_import_ignores_ids_from_another_run(self):
+        """Un id trimis manual nu trebuie să importe din altă rulare."""
+        from jobs.models import SearchResult, SearchRun
+        mine = SearchRun.objects.create(label="a mea", params_json={}, status="done")
+        other = SearchRun.objects.create(label="alta", params_json={}, status="done")
+        alien = SearchResult.objects.create(run=other, url="https://x.co/1")
+        self.client.post(reverse("import_search_results", args=[mine.pk]),
+                         {"result_ids": [alien.pk]})
+        self.assertEqual(Job.objects.count(), 0)
+
+
+class SearchTemplateTests(TestCase):
+    def test_search_page_lists_presets(self):
+        resp = self.client.get(reverse("search_index"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "ro_remote")
+
+    def test_search_page_has_the_nav_link_marked_active(self):
+        # Legat de link-ul „Căutare" în sine (href + text), nu doar de prezența
+        # separată a `aria-current="page"` și a cuvântului „Căutare" oriunde pe
+        # pagină — h1-ul paginii e chiar „Căutare joburi”, deci o asersare
+        # neagățată de nimic ar trece și dacă `aria-current` ar ateriza pe alt
+        # link din sidebar.
+        import re
+        resp = self.client.get(reverse("search_index"))
+        html = resp.content.decode()
+        url = reverse("search_index")
+        # `[^>]*` (nu `[\s\S]*`) ține potrivirea în interiorul UNUI singur tag
+        # `<a>` — altfel fereastra ar sări peste `>` în alt link din sidebar
+        # și ar valida o combinație greșită (aria-current pe alt link, iar
+        # href-ul Căutare pe un link fără aria-current).
+        self.assertRegex(
+            html,
+            r'<a\s[^>]*aria-current="page"[^>]*href="%s"[^>]*>\s*Căutare\s*</a>'
+            % re.escape(url))
+
+    def test_get_with_known_preset_seeds_the_form_from_it(self):
+        """Butonul „Încarcă preset" (fără JS) trebuie să semene formularul
+        din presetul cerut prin query string, nu doar din primul preset."""
+        # NU `assertContains(resp, ro["location"])` — locația fiecărui preset
+        # e randată oricum în textul propriului <option> din selectorul de
+        # preset (`cauta.html:23`), deci substring-ul gol ar trece și pe
+        # pagina cu presetul greșit. Legăm asersarea de câmpul real de
+        # formular (`name="location" value="..."`), care reflectă ce a
+        # semănat efectiv `SearchForm(initial=...)`.
+        from jobs import search_bridge
+        ro = next(p for p in search_bridge.presets() if p["key"] == "ro_remote")
+        resp = self.client.get(reverse("search_index"), {"preset": "ro_remote"})
+        self.assertContains(
+            resp, 'name="location" value="%s"' % ro["location"])
+        self.assertContains(resp, 'value="ro_remote" selected')
+
+    def test_get_with_unknown_preset_falls_back_to_default_without_crashing(self):
+        from jobs import search_bridge
+        resp = self.client.get(reverse("search_index"), {"preset": "does-not-exist"})
+        self.assertEqual(resp.status_code, 200)
+        default = search_bridge.presets()[0]
+        self.assertContains(resp, 'value="%s" selected' % default["key"])
+
+    def test_invalid_post_redisplays_the_form_without_starting(self):
+        from jobs.models import SearchRun
+        resp = self.client.post(reverse("search_index"), {
+            "keywords": "", "location": "Berlin", "sites": ["indeed"]})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(SearchRun.objects.count(), 0)
+
+    def test_run_page_shows_results(self):
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done",
+                                       found_count=1)
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Python Developer", prescore=60)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "Python Developer")
+
+    def test_running_page_asks_the_browser_to_refresh(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="running")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, 'http-equiv="refresh"')
+
+    def test_finished_page_does_not_refresh(self):
+        """O pagină terminată care se reîncarcă la 5s ar fi un ciclu inutil."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertNotContains(resp, 'http-equiv="refresh"')
+
+    def test_already_imported_result_cannot_be_selected_again(self):
+        # `assertContains(resp, "disabled")` NU ar asersa nimic real — CSS-ul
+        # `.btn-primary:disabled` din base.html conține literal cuvântul
+        # "disabled" și ajunge pe fiecare pagină, deci testul ar trece chiar
+        # dacă atributul `disabled` ar dispărea din checkbox. Legăm asersarea
+        # de checkbox-ul acestui rezultat anume.
+        import re
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        job = Job.objects.create(url="https://acme.de/jobs/1")
+        res = SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                          title="Python Developer", imported_job=job)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        html = resp.content.decode()
+        self.assertRegex(
+            html, r'name="result_ids" value="%d"[^>]*disabled' % res.pk)
+        self.assertContains(resp, "importat")
+
+    def test_skipped_result_shows_a_skipped_badge_not_the_green_one(self):
+        """Badge-ul, contorul și mesajul trebuie să spună același lucru.
+
+        `assertNotContains(resp, "importat")` ar fi vacuu (antetul randează
+        „{{ imported_count }} importate"), la fel și `"pill done"` singur
+        (pastila de status a rulării `done` o conține). Rândurile ambelor
+        feluri sunt în aceeași pagină, iar asersarea e pe NUMĂRUL de pastile
+        verzi de rând: exact una, cea chiar importată.
+        """
+        from jobs.models import SearchResult, SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done",
+                                       found_count=2, imported_count=1)
+        imported = Job.objects.create(url="https://acme.de/jobs/1")
+        blocat = Job.objects.create(url="https://acme.de/jobs/2", send_state="sent")
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/1",
+                                    title="Chiar importat", imported_job=imported,
+                                    import_skipped=False, prescore=60)
+        SearchResult.objects.create(run=run, url="https://acme.de/jobs/2",
+                                    title="Sărit", imported_job=blocat,
+                                    import_skipped=True, prescore=50)
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        html = resp.content.decode()
+
+        self.assertEqual(html.count('<a class="pill done"'), 1)
+        self.assertIn(">importat</a>", html)
+        self.assertIn(">sărit</a>", html)
+        self.assertContains(resp, "1 importate")
+
+    def test_zero_second_duration_is_rendered_not_hidden(self):
+        """`{% if run.duration_sec %}` ascundea o durată legitimă de 0s
+        (căutare terminată sub o secundă) — 0 e o durată, nu absența ei."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        run.finished_at = run.started_at
+        run.save(update_fields=["finished_at"])
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "· 0s")
+
+    def test_running_run_shows_no_duration(self):
+        """Cealaltă jumătate: fără `finished_at` nu se randează nicio durată."""
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="running")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertNotContains(resp, "Nones")
+        self.assertNotContains(resp, "· 0s")
+
+    def test_empty_run_shows_a_guiding_empty_state(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(label="test", params_json={}, status="done")
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "Nicio potrivire")
+
+    def test_warnings_are_shown_separately_from_errors(self):
+        from jobs.models import SearchRun
+        run = SearchRun.objects.create(
+            label="test", params_json={}, status="done",
+            warnings_json=["[avertisment] [de/indeed] am renunțat la hours_old"],
+            errors_json=["[de/linkedin] Python Developer: 429"])
+        resp = self.client.get(reverse("search_run", args=[run.pk]))
+        self.assertContains(resp, "am renunțat la hours_old")
+        self.assertContains(resp, "Erori pe surse (1)")

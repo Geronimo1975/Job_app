@@ -180,3 +180,36 @@ class TestMarketKeywordBonus:
         score_split, reasons_split = prescore(_job("AI Systems / Test Engineer", "", market="de"), CFG_MARKETS)
         assert score_senior >= 15
         assert not any("AI Engineer" in r for r in reasons_split if r.startswith("cautare:"))
+
+
+class TestAdHocSearchKeywords:
+    """Căutările din dashboard n-au piață în `scraping.markets`."""
+
+    def test_adhoc_keyword_absent_from_settings_earns_its_reason(self):
+        """Fără `search_keywords`, „Game Designer" nu există în nicio piață,
+        deci n-ar primi niciodată bonus, iar scorul (și ordinea implicită a
+        tabelului, `-prescore`) s-ar baza pe keyword-urile altor căutări."""
+        job = _job("Senior Game Designer", "Unity, level design.")
+        score, reasons = prescore(job, CFG_MARKETS,
+                                  search_keywords=["Game Designer"])
+        assert "cautare: Game Designer" in reasons
+        assert score >= 15
+
+    def test_adhoc_keywords_replace_the_market_union(self):
+        """Un titlu care ar fi luat bonus din reuniunea piețelor NU-l mai ia
+        când căutarea a fost pe altceva."""
+        job = _job("Django Developer", "")
+        _, market_reasons = prescore(job, CFG_MARKETS)
+        _, adhoc_reasons = prescore(job, CFG_MARKETS,
+                                    search_keywords=["Game Designer"])
+        assert any("Django Developer" in r for r in market_reasons)
+        assert not any(r.startswith("cautare:") for r in adhoc_reasons)
+
+    def test_cli_market_path_is_unchanged(self):
+        """Fără argumentul nou, comportamentul e cel dinainte (calea CLI)."""
+        job = _job("AI Engineer (m/w/d)", "Wir nutzen Python und Docker.", market="de")
+        assert prescore(job, CFG_MARKETS) == prescore(job, CFG_MARKETS,
+                                                      search_keywords=None)
+        score, reasons = prescore(job, CFG_MARKETS)
+        assert score >= 40
+        assert "cautare: AI Engineer" in reasons

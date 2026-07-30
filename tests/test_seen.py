@@ -223,3 +223,17 @@ class TestSeenIndex:
         idx.filter_new([{"url": "https://a.com/1", "company": "A", "title": "T"}])
 
         assert "Eliminat pe firmă+titlu" not in capsys.readouterr().err
+
+
+class TestDecisionFor:
+    def test_returns_recorded_decision(self, tmp_path):
+        from store.seen import APLICAT, SeenIndex
+        index = SeenIndex(tmp_path / "seen.json")
+        job = {"url": "https://a.co/1", "company": "ACME", "title": "Python Dev"}
+        index.mark(job, APLICAT)
+        assert index.decision_for(job) == APLICAT
+
+    def test_returns_empty_for_unseen_job(self, tmp_path):
+        from store.seen import SeenIndex
+        index = SeenIndex(tmp_path / "seen.json")
+        assert index.decision_for({"url": "https://a.co/9"}) == ""

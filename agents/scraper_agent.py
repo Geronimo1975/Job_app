@@ -13,7 +13,7 @@ import re
 from agents.base_agent import AgentResult, AgentStatus, BaseAgent
 from scrapers.base import Market, save_jobs
 from scrapers.career_page_scraper import CareerPageScraper
-from scrapers.jobspy_scraper import JobSpyScraper
+from scrapers.jobspy_scraper import WARNING_PREFIX, JobSpyScraper
 from scrapers.remote_boards import RemoteBoardsScraper
 from scrapers.ro_boards import RoBoardsScraper
 
@@ -60,10 +60,13 @@ class ScraperAgent(BaseAgent):
                 all_jobs.extend(jobs)
                 result.errors.extend(errors)
                 # Blocante = erorile surselor ne-best-effort, mai puțin cele
-                # ale sub-site-urilor declarate best-effort (ex. linkedin).
+                # ale sub-site-urilor declarate best-effort (ex. linkedin) și
+                # avertismentele (filtre renunțate — degradare, nu eșec).
                 if source not in market.best_effort_sources:
                     blocking_errors.extend(
-                        e for e in errors if not self._is_best_effort_error(e, market)
+                        e for e in errors
+                        if not e.startswith(WARNING_PREFIX)
+                        and not self._is_best_effort_error(e, market)
                     )
                 self.logger.info(f"  {source}: {len(jobs)} joburi, {len(errors)} erori")
 

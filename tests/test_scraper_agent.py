@@ -8,6 +8,7 @@ import pytest
 
 from agents.base_agent import AgentStatus
 from agents.scraper_agent import ScraperAgent
+from scrapers.jobspy_scraper import WARNING_PREFIX
 
 
 def _job(url, title="Python Developer", market="de"):
@@ -164,3 +165,35 @@ class TestHonestStatus:
         agent.jobspy.scrape_market.return_value = ([], ["[de/linkedin] 429"])
         result = agent.run(markets=["de"])
         assert result.status == AgentStatus.SUCCESS
+
+
+class TestWarningsDoNotLowerStatus:
+    def test_warning_is_reported_but_status_stays_success(self, agent):
+        """Un filtru renunțat e degradare raportată, nu eșec de sursă."""
+        agent.jobspy.scrape_market.return_value = (
+            [_job("https://a.co/1")],
+            [f"{WARNING_PREFIX} [de/indeed] am renunțat la hours_old"],
+        )
+        result = agent.run(markets=["de"], sources=["jobspy"])
+
+        assert result.status == AgentStatus.SUCCESS
+        assert any(WARNING_PREFIX in e for e in result.errors)
+
+    def test_real_error_still_lowers_status(self, agent):
+        agent.jobspy.scrape_market.return_value = (
+            [], ["[de/indeed] Python Developer: 500 Server Error"]
+        )
+        result = agent.run(markets=["de"], sources=["jobspy"])
+
+        assert result.status == AgentStatus.FAILED
+
+    def test_warning_plus_real_error_still_lowers_status(self, agent):
+        """Avertismentul nu trebuie să camufleze o eroare reală din același lot."""
+        agent.jobspy.scrape_market.return_value = (
+            [_job("https://a.co/1")],
+            [f"{WARNING_PREFIX} [de/indeed] am renunțat la hours_old",
+             "[de/indeed] Python Developer: 500 Server Error"],
+        )
+        result = agent.run(markets=["de"], sources=["jobspy"])
+
+        assert result.status == AgentStatus.PARTIAL
