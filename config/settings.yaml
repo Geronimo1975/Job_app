@@ -59,7 +59,7 @@ scraping:
   # Market; adăugarea unei țări noi se face aici, fără cod nou.
   markets:
     ro_remote:                        # PRIORITAR — remote lucrabil din DE
-      country: "ROMANIA"
+      country: "romania"              # Country.from_string() folosește format lowercase
       language: "en"
       locations: ["Romania"]
       remote: true
@@ -72,7 +72,7 @@ scraping:
       best_effort_sources: ["linkedin", "ro_boards"]
 
     uae:
-      country: "UNITEDARABEMIRATES"   # enum jobspy verificat
+      country: "united arab emirates"  # Country.from_string() lowercase cu spații
       language: "en"
       locations: ["United Arab Emirates"]
       remote: true
@@ -81,7 +81,7 @@ scraping:
       best_effort_sources: ["linkedin"]
 
     saudi:
-      country: "SAUDIARABIA"
+      country: "saudi arabia"          # Country.from_string() lowercase cu spații
       language: "en"
       locations: ["Saudi Arabia"]
       remote: true
@@ -90,8 +90,8 @@ scraping:
       best_effort_sources: ["linkedin"]
 
     ch:
-      country: "SWITZERLAND"
-      language: "en"                  # scrisori EN și pentru CH (decizia userului)
+      country: "switzerland"           # Country.from_string() folosește format lowercase
+      language: "en"                   # scrisori EN și pentru CH (decizia userului)
       locations: ["Switzerland"]
       remote: true
       keyword_groups: *skills_groups
