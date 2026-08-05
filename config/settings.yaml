@@ -22,9 +22,9 @@ skills:
     - "AI Automation"
     - "n8n"
     - "Workflow Automation (Make.com, Zapier)"
-    - "Chatbot Development"
+    - "Chatbot"
     - "Conversational AI"
-    - "SEO/AIO/GEO"
+    - "SEO"
     - "LLM APIs (OpenAI, Claude, Gemini)"
   secondary:
     - "Python"
@@ -143,7 +143,8 @@ scraping:
       - "remote"
     min_salary: 0
     # Sub acest scor local jobul NU ajunge la AI
-    min_prescore: 40
+    # Calibrat pe distribuția reală: titlu perfect + bonus keyword = ~35
+    min_prescore: 30
 
 # ── AI / LLM ───────────────────────────────────────────────
 ai:
