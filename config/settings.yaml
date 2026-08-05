@@ -133,14 +133,15 @@ scraping:
       - "nurse"
       - "accountant"
     # Semnale part-time/flexibil: bonus în prescore
+    # "contract" și "remote" au fost eliminate: cvasi-omniprezente în
+    # descrierile de anunțuri remote (toate piețele au remote: true),
+    # bonusul +20 devenea ofset constant și cobora pragul efectiv (JOB-47)
     flex_signals:
       - "part-time"
       - "parttime"
       - "part time"
-      - "contract"
       - "freelance"
       - "flexible hours"
-      - "remote"
     min_salary: 0
     # Sub acest scor local jobul NU ajunge la AI
     # Calibrat pe distribuția reală: titlu perfect + bonus keyword = ~35

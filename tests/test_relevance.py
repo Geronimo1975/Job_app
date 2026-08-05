@@ -299,3 +299,35 @@ class TestFlexSignals:
         job = {"title": "Chatbot Developer", "description": "on-site role"}
         _, reasons = prescore(job, self.CFG)
         assert not any(r.startswith("flexibil") for r in reasons)
+
+
+class TestInteraction:
+    """Interacțiunea penalizare rol nepotrivit × bonus flex × bonus keyword piață."""
+
+    CFG = {
+        "scraping": {
+            "filters": {
+                "min_prescore": 30,
+                "negative_keywords": ["sales"],
+                "flex_signals": ["freelance"],
+            },
+            "markets": {
+                "ro_remote": {"keyword_groups": [["chatbot developer"]]},
+            },
+        },
+        "skills": {"primary": [], "secondary": []},
+    }
+
+    def test_market_bonus_flex_and_negative_sum_and_clamp(self):
+        job = {
+            "title": "Sales Chatbot Developer",
+            "description": "freelance role available",
+            "market": "ro_remote",
+        }
+        score, reasons = prescore(job, self.CFG)
+
+        # bonus piață 15 + flex 10 - 60 = -35, plafonat la 0
+        assert score == 0
+        assert any(r.startswith("cautare:") for r in reasons)
+        assert any(r.startswith("flexibil:") for r in reasons)
+        assert any(r.startswith("rol nepotrivit:") for r in reasons)
