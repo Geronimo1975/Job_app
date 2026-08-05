@@ -18,15 +18,18 @@ applicant:
 # ── Skills & Keywords ───────────────────────────────────────
 skills:
   primary:
+    - "Claude Code"
+    - "AI Automation"
+    - "n8n"
+    - "Workflow Automation (Make.com, Zapier)"
+    - "Chatbot Development"
+    - "Conversational AI"
+    - "SEO/AIO/GEO"
+    - "LLM APIs (OpenAI, Claude, Gemini)"
+  secondary:
     - "Python"
     - "Django"
-    - "AI/ML"
-    - "LLM APIs (OpenAI, Claude, Gemini)"
-    - "Workflow Automation (n8n, Make.com)"
-    - "Data Engineering"
-  secondary:
     - "JavaScript"
-    - "React"
     - "Docker"
     - "PostgreSQL"
     - "REST APIs"
@@ -55,29 +58,45 @@ scraping:
   # O piață = țară + limbă + keywords + surse. Codul primește un obiect
   # Market; adăugarea unei țări noi se face aici, fără cod nou.
   markets:
-    de:
-      country: "GERMANY"          # enum jobspy Country
-      language: "de"              # → col „Sprache" → limba Anschreiben
-      locations: ["Germany"]      # la nivel de țară, NU pe orașe:
-                                  # Indeed întoarce oricum toate orașele
-      remote: false
-      keyword_groups:
-        - ["Python Developer", "Django Developer", "Backend Engineer"]
-        - ["AI Engineer", "LLM Engineer", "Machine Learning Engineer"]
-        - ["Data Engineer", "Automation Engineer"]
-      sources: ["jobspy", "career_pages"]
+    ro_remote:                        # PRIORITAR — remote lucrabil din DE
+      country: "ROMANIA"
+      language: "en"
+      locations: ["Romania"]
+      remote: true
+      keyword_groups: &skills_groups
+        - ["Claude Code", "AI Developer", "vibe coding", "AI Automation"]
+        - ["n8n", "workflow automation", "Make.com", "Zapier"]
+        - ["chatbot developer", "conversational AI", "LLM integration"]
+        - ["SEO specialist", "technical SEO", "AI SEO", "GEO optimization"]
+      sources: ["jobspy", "ro_boards"]
+      best_effort_sources: ["linkedin", "ro_boards"]
+
+    uae:
+      country: "UNITEDARABEMIRATES"   # enum jobspy verificat
+      language: "en"
+      locations: ["United Arab Emirates"]
+      remote: true
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
-    ro_remote:
-      country: "ROMANIA"
-      language: "en"              # scrisoare EN, nu Anschreiben german
-      locations: ["Romania"]
-      remote: true                # → jobspy is_remote=True
-      keyword_groups:
-        - ["Python Developer", "Django Developer"]
-        - ["AI Engineer", "LLM Engineer"]
-      sources: ["jobspy", "remote_boards", "ro_boards"]
-      best_effort_sources: ["ro_boards", "linkedin"]
+    saudi:
+      country: "SAUDIARABIA"
+      language: "en"
+      locations: ["Saudi Arabia"]
+      remote: true
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    ch:
+      country: "SWITZERLAND"
+      language: "en"                  # scrisori EN și pentru CH (decizia userului)
+      locations: ["Switzerland"]
+      remote: true
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
 
   # Site-uri jobspy folosite per piață. Suportate upstream:
   # indeed, linkedin, glassdoor, google, zip_recruiter, bayt, naukri, bdjobs
@@ -102,6 +121,26 @@ scraping:
       - "Director"
       - "VP"
       - "Head of"
+    # Roluri greșite: penalizare mare în prescore (nu hard-reject)
+    negative_keywords:
+      - "sales"
+      - "account manager"
+      - "SAP consultant"
+      - "support agent"
+      - "customer support"
+      - "recruiter"
+      - "warehouse"
+      - "nurse"
+      - "accountant"
+    # Semnale part-time/flexibil: bonus în prescore
+    flex_signals:
+      - "part-time"
+      - "parttime"
+      - "part time"
+      - "contract"
+      - "freelance"
+      - "flexible hours"
+      - "remote"
     min_salary: 0
     # Sub acest scor local jobul NU ajunge la AI
     min_prescore: 40
