@@ -25,6 +25,11 @@ _W_MARKET_KEYWORD = 15
 # semnal; mai multe nu fac jobul mai relevant.
 _MAX_KEYWORD_BONUS = 30
 
+# Penalizare pentru rol greșit în titlu (sales, consultant SAP…): mare cât să
+# scufunde jobul sub min_prescore, dar NU hard-reject — un titlu cu multe
+# semnale bune poate compensa (spre deosebire de exclude_keywords).
+_W_NEGATIVE = -60
+
 
 def skill_tokens(skill: str) -> list[str]:
     """Sparge un skill din config în termeni căutabili.
@@ -97,6 +102,13 @@ def prescore(job: dict, config: dict,
     score = 0
     reasons: list[str] = []
 
+    # ── Penalizare rol nepotrivit: doar pe titlu, cuvânt întreg ──
+    # (pe descriere ar penaliza „work with the sales team")
+    for negative in filters.get("negative_keywords", []) or []:
+        if _contains(title_l, negative.lower()):
+            score += _W_NEGATIVE
+            reasons.append(f"rol nepotrivit: {negative}")
+
     for skill in skills.get("primary", []) or []:
         if _matches(title_l, skill):
             score += _W_PRIMARY_TITLE
@@ -126,7 +138,7 @@ def prescore(job: dict, config: dict,
             reasons.append(f"cautare: {keyword}")
     score += min(keyword_bonus, _MAX_KEYWORD_BONUS)
 
-    return min(score, 100), reasons
+    return max(0, min(score, 100)), reasons
 
 
 def passes_prefilter(job: dict, config: dict) -> bool:

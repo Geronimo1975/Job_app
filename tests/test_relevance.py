@@ -213,3 +213,51 @@ class TestAdHocSearchKeywords:
         score, reasons = prescore(job, CFG_MARKETS)
         assert score >= 40
         assert "cautare: AI Engineer" in reasons
+
+
+class TestNegativeKeywords:
+    CFG = {
+        "scraping": {"filters": {
+            "min_prescore": 40,
+            "negative_keywords": ["sales", "SAP consultant", "recruiter"],
+        }},
+        "skills": {"primary": ["n8n"], "secondary": []},
+    }
+
+    def test_negative_keyword_in_title_sinks_score(self):
+        job = {"title": "Sales Manager n8n", "description": ""}
+        score, reasons = prescore(job, self.CFG)
+        assert score == 0                      # 20 (primary în titlu) - 60, plafonat la 0
+        assert "rol nepotrivit: sales" in reasons
+
+    def test_negative_matches_whole_words_only(self):
+        # „sales" nu trebuie să se prindă în „Salesforce" — potrivire pe cuvânt întreg
+        job = {"title": "Salesforce n8n Developer", "description": ""}
+        score, reasons = prescore(job, self.CFG)
+        assert not any(r.startswith("rol nepotrivit") for r in reasons)
+
+    def test_negative_only_on_title_not_description(self):
+        # Descrierile menționează des alte departamente („work with sales team")
+        job = {"title": "n8n Automation Engineer", "description": "you support the sales team"}
+        score, reasons = prescore(job, self.CFG)
+        assert not any(r.startswith("rol nepotrivit") for r in reasons)
+
+    def test_multiword_negative_rejects(self):
+        job = {"title": "SAP Consultant (m/w/d)", "description": ""}
+        score, reasons = prescore(job, self.CFG)
+        assert "rol nepotrivit: SAP consultant" in reasons
+
+    def test_strong_signals_can_survive_penalty(self):
+        # Penalizarea e mare, dar nu HARD_REJECT: semnale multe pot compensa
+        cfg = {
+            "scraping": {"filters": {"min_prescore": 40,
+                                     "negative_keywords": ["recruiter"]}},
+            "skills": {"primary": ["n8n", "chatbot", "Claude Code",
+                                   "workflow automation", "conversational AI"],
+                       "secondary": []},
+        }
+        job = {"title": "Recruiter for n8n chatbot Claude Code "
+                        "workflow automation conversational AI team",
+               "description": ""}
+        score, _ = prescore(job, cfg)
+        assert score == 40                     # 5×20 - 60 = 40 → exact pragul
