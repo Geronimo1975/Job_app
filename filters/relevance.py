@@ -25,6 +25,12 @@ _W_MARKET_KEYWORD = 15
 # semnal; mai multe nu fac jobul mai relevant.
 _MAX_KEYWORD_BONUS = 30
 
+# Bonus pentru semnale de flexibilitate (part-time/freelance/remote…): profilul
+# caută explicit angajamente sub 40h, deci flexibilitatea E relevanță, nu
+# doar un beneficiu. Plafonat: două semnale ajung.
+_W_FLEX = 10
+_MAX_FLEX_BONUS = 20
+
 # Penalizare pentru rol greșit în titlu (sales, consultant SAP…): mare cât să
 # scufunde jobul sub min_prescore, dar NU hard-reject — un titlu cu multe
 # semnale bune poate compensa (spre deosebire de exclude_keywords).
@@ -137,6 +143,15 @@ def prescore(job: dict, config: dict,
             keyword_bonus += _W_MARKET_KEYWORD
             reasons.append(f"cautare: {keyword}")
     score += min(keyword_bonus, _MAX_KEYWORD_BONUS)
+
+    # ── Bonus flexibilitate: titlu SAU descriere ────────────────
+    # (aici descrierea contează — „remote, part-time possible" apare rar în titlu)
+    flex_bonus = 0
+    for signal in filters.get("flex_signals", []) or []:
+        if _contains(text_l, signal.lower()):
+            flex_bonus += _W_FLEX
+            reasons.append(f"flexibil: {signal}")
+    score += min(flex_bonus, _MAX_FLEX_BONUS)
 
     return max(0, min(score, 100)), reasons
 

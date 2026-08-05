@@ -261,3 +261,41 @@ class TestNegativeKeywords:
                "description": ""}
         score, _ = prescore(job, cfg)
         assert score == 40                     # 5×20 - 60 = 40 → exact pragul
+
+
+class TestFlexSignals:
+    CFG = {
+        "scraping": {"filters": {
+            "min_prescore": 40,
+            "flex_signals": ["part-time", "freelance", "flexible hours", "remote"],
+        }},
+        "skills": {"primary": ["chatbot"], "secondary": []},
+    }
+
+    def test_flex_signal_in_title_adds_bonus(self):
+        base = {"title": "Chatbot Developer", "description": ""}
+        flex = {"title": "Chatbot Developer (part-time)", "description": ""}
+        s_base, _ = prescore(base, self.CFG)
+        s_flex, reasons = prescore(flex, self.CFG)
+        assert s_flex == s_base + 10
+        assert "flexibil: part-time" in reasons
+
+    def test_flex_signal_in_description_counts(self):
+        job = {"title": "Chatbot Developer",
+               "description": "freelance collaboration, flexible hours"}
+        _, reasons = prescore(job, self.CFG)
+        assert "flexibil: freelance" in reasons
+        assert "flexibil: flexible hours" in reasons
+
+    def test_flex_bonus_is_capped(self):
+        job = {"title": "Chatbot Developer",
+               "description": "remote, part-time, freelance, flexible hours"}
+        s, _ = prescore(job, self.CFG)
+        base = {"title": "Chatbot Developer", "description": ""}
+        s_base, _ = prescore(base, self.CFG)
+        assert s == s_base + 20                # 4 semnale × 10, plafonat la 20
+
+    def test_no_signals_no_bonus_no_reasons(self):
+        job = {"title": "Chatbot Developer", "description": "on-site role"}
+        _, reasons = prescore(job, self.CFG)
+        assert not any(r.startswith("flexibil") for r in reasons)
