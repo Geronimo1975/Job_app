@@ -44,7 +44,7 @@
         "options": {
           "range": "Bewerbungen!A1:AB"
         },
-        "authentication": "serviceAccount"
+        "authentication": "oAuth2"
       },
       "id": "gs-read",
       "name": "Read Sheet",
@@ -55,9 +55,9 @@
         300
       ],
       "credentials": {
-        "googleApi": {
-          "id": "D1jIVLCWwpVV1Y3U",
-          "name": "JobApp Service Account (get-hub)"
+        "googleSheetsOAuth2Api": {
+          "id": "lwLv81Aaab8h0Zm3",
+          "name": "Google Sheets account1"
         }
       }
     },

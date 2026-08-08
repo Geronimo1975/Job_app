@@ -13,9 +13,13 @@
   {% endif %}
   <div class="meta">
     <span><strong>URL:</strong> <a href="{{ job.url }}" target="_blank" rel="noopener" class="mono">{{ job.url }}</a></span>
+    {% if job.anschreiben_drive_link %}
+      <span><strong>Anschreiben (Drive):</strong>
+        <a href="{{ job.anschreiben_drive_link }}" target="_blank" rel="noopener">deschide PDF-ul</a></span>
+    {% endif %}
   </div>
 
-  <form method="post" action="{% url 'job_detail' job.pk %}">
+  <form method="post" action="{% url 'job_detail' job.pk %}" id="edit-form">
     {% csrf_token %}
     <div class="form-grid">
       <div class="field"><label for="id_title">Position</label>{{ form.title }}</div>
@@ -27,12 +31,11 @@
       <div class="field"><label for="id_match_score">Match Score</label>{{ form.match_score }}</div>
       <div class="field full"><label for="id_notizen">Notizen</label>{{ form.notizen }}</div>
     </div>
-    <div class="actions">
-      <button type="submit" class="btn-secondary">Salvează local</button>
-    </div>
   </form>
 
+  {# Un singur rând de acțiuni: submit-ul editării intră prin form="edit-form", fără imbricare. #}
   <div class="actions">
+    <button type="submit" form="edit-form" class="btn-secondary">Salvează local</button>
     <form method="post" action="{% url 'push_job' job.pk %}">
       {% csrf_token %}<button type="submit" class="btn-secondary">Salvează în Sheet</button>
     </form>

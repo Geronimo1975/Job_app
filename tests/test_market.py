@@ -158,3 +158,36 @@ class TestSaveJobs:
         data = json.loads(path.read_text(encoding="utf-8"))
         assert len(data) == 1
         assert data[0]["title"] == "B"
+
+
+class TestPerMarketSites:
+    """Site-urile jobspy pot fi alese per piață. Indeed pe domeniul `www`
+    (`country: worldwide`) întoarce 0 rezultate — măsurat 2026-08-07 — deci
+    piața remote globală ar face 4 apeluri inutile la fiecare rulare."""
+
+    CFG = {
+        "scraping": {
+            "jobspy_sites": ["indeed", "linkedin"],
+            "markets": {
+                "de": {"country": "germany", "language": "de"},
+                "remote_global": {"country": "worldwide", "language": "en",
+                                  "jobspy_sites": ["linkedin"]},
+            },
+        }
+    }
+
+    def _market(self, key):
+        return next(m for m in Market.from_config(self.CFG) if m.key == key)
+
+    def test_market_without_override_uses_the_global_list(self):
+        q = self._market("de").to_query(self.CFG["scraping"])
+        assert q.sites == ["indeed", "linkedin"]
+
+    def test_market_override_wins(self):
+        q = self._market("remote_global").to_query(self.CFG["scraping"])
+        assert q.sites == ["linkedin"]
+
+    def test_override_does_not_leak_between_markets(self):
+        markets = {m.key: m for m in Market.from_config(self.CFG)}
+        assert markets["remote_global"].jobspy_sites == ["linkedin"]
+        assert markets["de"].jobspy_sites == []

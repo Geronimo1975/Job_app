@@ -5,6 +5,7 @@ Teste pentru prefiltrul determinist — funcții pure, fără rețea și fără 
 from filters.relevance import (
     HARD_REJECT,
     passes_prefilter,
+    requires_email,
     prescore,
     skill_tokens,
 )
@@ -247,6 +248,48 @@ class TestNegativeKeywords:
         score, reasons = prescore(job, self.CFG)
         assert "rol nepotrivit: SAP consultant" in reasons
 
+    def test_negative_after_a_separator_is_a_qualifier_not_the_role(self):
+        """„Junior AI Engineer – Conversational AI & Sales Solutions" (freenet,
+        găsit live 2026-08-06) cădea la 0: „Sales" din calificativ declanșa
+        −60, deși rolul e AI Engineer. Capul titlului spune ce e jobul;
+        ce urmează după separator spune pentru ce domeniu.
+        """
+        cfg = {
+            "scraping": {"filters": {"min_prescore": 40, "negative_keywords": ["sales"]}},
+            "skills": {"primary": ["Conversational AI"], "secondary": []},
+        }
+        job = {"title": "Junior AI Engineer – Conversational AI & Sales Solutions",
+               "description": ""}
+        score, reasons = prescore(job, cfg)
+        assert not any(r.startswith("rol nepotrivit") for r in reasons)
+        assert score == 20                     # skill primar în titlu, fără −60
+
+    def test_negative_in_the_head_still_sinks_the_score(self):
+        """Regula nu trebuie să dezarmeze penalizarea: dacă rolul ÎNSUȘI e de
+        vânzări, keyword-ul e în cap și −60 se aplică."""
+        job = {"title": "Senior Solution Sales Executive - Finance", "description": ""}
+        score, reasons = prescore(job, self.CFG)
+        assert "rol nepotrivit: sales" in reasons
+
+    def test_separator_rule_does_not_rescue_a_plain_sales_title(self):
+        """`Sales Manager n8n` n-are separator: capul e tot titlul."""
+        job = {"title": "Sales Manager n8n", "description": ""}
+        score, reasons = prescore(job, self.CFG)
+        assert "rol nepotrivit: sales" in reasons
+        assert score == 0
+
+    def test_hyphen_inside_a_word_is_not_a_separator(self):
+        """`Pre-Sales Manager` e tot un rol de vânzări — cratima din interiorul
+        cuvântului nu deschide un calificativ (spre deosebire de „ - ")."""
+        job = {"title": "Pre-Sales Manager", "description": ""}
+        _, reasons = prescore(job, self.CFG)
+        assert "rol nepotrivit: sales" in reasons
+
+    def test_comma_also_opens_a_qualifier(self):
+        job = {"title": "n8n Engineer, Sales Enablement", "description": ""}
+        _, reasons = prescore(job, self.CFG)
+        assert not any(r.startswith("rol nepotrivit") for r in reasons)
+
     def test_strong_signals_can_survive_penalty(self):
         # Penalizarea e mare, dar nu HARD_REJECT: semnale multe pot compensa
         cfg = {
@@ -331,3 +374,40 @@ class TestInteraction:
         assert any(r.startswith("cautare:") for r in reasons)
         assert any(r.startswith("flexibil:") for r in reasons)
         assert any(r.startswith("rol nepotrivit:") for r in reasons)
+
+
+class TestRequiresEmailPerMarket:
+    """Emailul e obligatoriu doar acolo unde există: DE/NL scriu „Bewerbung
+    an …", pe când anunțurile din România se aplică prin platformă (măsurat
+    2026-08-06: 1 email la 106 joburi eJobs). O regulă globală ar goli exact
+    piața pe care userul a cerut-o."""
+
+    CFG = {
+        "scraping": {
+            "filters": {"require_email": True},
+            "markets": {
+                "de": {"country": "germany", "language": "de", "locations": ["Germany"]},
+                "ro_remote": {"country": "romania", "language": "en",
+                              "locations": ["Romania"], "require_email": False},
+            },
+        }
+    }
+
+    def test_market_without_override_follows_the_global_rule(self):
+        assert requires_email({"market": "de"}, self.CFG) is True
+
+    def test_market_override_wins(self):
+        assert requires_email({"market": "ro_remote"}, self.CFG) is False
+
+    def test_unknown_market_follows_the_global_rule(self):
+        """Joburile fără piață (career pages) nu au voie să scape regula."""
+        assert requires_email({"market": "necunoscuta"}, self.CFG) is True
+        assert requires_email({}, self.CFG) is True
+
+    def test_market_can_be_stricter_than_the_global_rule(self):
+        cfg = {"scraping": {"filters": {"require_email": False},
+                            "markets": {"de": {"require_email": True}}}}
+        assert requires_email({"market": "de"}, cfg) is True
+
+    def test_default_is_permissive_when_nothing_is_configured(self):
+        assert requires_email({"market": "de"}, {}) is False

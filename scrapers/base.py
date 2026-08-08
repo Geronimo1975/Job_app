@@ -28,6 +28,11 @@ class Market:
     # Surse al căror eșec NU trebuie să marcheze runul ca FAILED
     # (ex. scraping HTML pe site-uri fără API, care se strică la redesign).
     best_effort_sources: tuple[str, ...] = ()
+    # Site-urile jobspy ale acestei piețe. Gol = se folosește lista globală
+    # `scraping.jobspy_sites`. Există pentru că nu orice site acoperă orice
+    # piață: Indeed pe domeniul `www` (`country: worldwide`) întoarce 0
+    # rezultate, deci piața remote globală ar face apeluri inutile.
+    jobspy_sites: list[str] = field(default_factory=list)
 
     @staticmethod
     def from_config(config: dict) -> list["Market"]:
@@ -45,6 +50,7 @@ class Market:
                     keyword_groups=[list(g) for g in (cfg.get("keyword_groups", []) or [])],
                     sources=list(cfg.get("sources", []) or []),
                     best_effort_sources=tuple(cfg.get("best_effort_sources", []) or []),
+                    jobspy_sites=list(cfg.get("jobspy_sites", []) or []),
                 )
             )
         return markets
@@ -53,7 +59,7 @@ class Market:
         """Interogarea corespunzătoare acestei piețe, cu limitele din YAML."""
         return SearchQuery(
             keyword_groups=self.keyword_groups,
-            sites=list(scrape_config.get("jobspy_sites", ["indeed"])),
+            sites=list(self.jobspy_sites or scrape_config.get("jobspy_sites", ["indeed"])),
             # Piața fără orașe caută la nivel de țară — Indeed întoarce
             # oricum toate orașele.
             location=self.locations[0] if self.locations else self.country,

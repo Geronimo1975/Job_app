@@ -58,42 +58,111 @@ scraping:
   # O piață = țară + limbă + keywords + surse. Codul primește un obiect
   # Market; adăugarea unei țări noi se face aici, fără cod nou.
   markets:
-    ro_remote:                        # PRIORITAR — remote lucrabil din DE
-      country: "romania"              # Country.from_string() folosește format lowercase
+    # ── Nucleu: remote oriunde („nomad") ──────────────────────
+    # Indeed NU acoperă asta: pe domeniul `www` (`country: worldwide`) întoarce
+    # 0 rezultate (măsurat 2026-08-07), de aceea piața e doar LinkedIn — care
+    # dă exact profilul căutat („AI Automation Engineer (Make.com / n8n)").
+    # ⚠ LinkedIn nu expune NICIODATĂ adrese de email: rândurile de aici intră
+    # cu „Bewerbungsart: Portal" și se aplică din „Apply URL".
+    remote_global:
+      country: "worldwide"
       language: "en"
-      locations: ["Romania"]
+      locations: ["European Union"]
       remote: true
+      jobspy_sites: ["linkedin"]
       keyword_groups: &skills_groups
         - ["Claude Code", "AI Developer", "vibe coding", "AI Automation"]
         - ["n8n", "workflow automation", "Make.com", "Zapier"]
         - ["chatbot developer", "conversational AI", "LLM integration"]
         - ["SEO specialist", "technical SEO", "AI SEO", "GEO optimization"]
-      sources: ["jobspy", "ro_boards"]
-      best_effort_sources: ["linkedin", "ro_boards"]
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
 
-    uae:
-      country: "united arab emirates"  # Country.from_string() lowercase cu spații
-      language: "en"
-      locations: ["United Arab Emirates"]
-      remote: true
+    # ── Locații unde e acceptat și modelul HIBRID ─────────────
+    # `remote: false` NU înseamnă „doar on-site": înseamnă că nu se aplică
+    # filtrul remote, deci vin ȘI anunțurile remote, ȘI cele hibride/on-site.
+    # Tot aici se găsesc adresele de email (anunțurile locale scriu
+    # „Bewerbung an …"): DE 17%, AT 13%, SE 10%, NL 10% — măsurat 2026-08-07.
+    de:
+      country: "germany"
+      language: "de"                   # piața de acasă → Anschreiben în germană
+      locations: ["Germany"]
+      remote: false
       keyword_groups: *skills_groups
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
-    saudi:
-      country: "saudi arabia"          # Country.from_string() lowercase cu spații
-      language: "en"
-      locations: ["Saudi Arabia"]
-      remote: true
+    at:
+      country: "austria"
+      language: "de"
+      locations: ["Austria"]
+      remote: false
       keyword_groups: *skills_groups
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
     ch:
-      country: "switzerland"           # Country.from_string() folosește format lowercase
-      language: "en"                   # scrisori EN și pentru CH (decizia userului)
+      country: "switzerland"
+      language: "en"                   # scrisori EN pentru CH (decizia userului)
       locations: ["Switzerland"]
-      remote: true
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    nl:
+      country: "netherlands"
+      language: "en"                   # userul nu vorbește neerlandeză
+      locations: ["Netherlands"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    se:
+      country: "sweden"
+      language: "en"
+      locations: ["Sweden"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    # ⚠ Cheia TREBUIE citată: YAML 1.1 citește `no` ca boolean False, iar
+    # piața ar ajunge înregistrată sub cheia `False` (afișată ca `0`).
+    "no":
+      country: "norway"
+      language: "en"
+      locations: ["Norway"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    ro:
+      country: "romania"
+      language: "en"
+      locations: ["Romania"]
+      remote: false
+      keyword_groups: *skills_groups
+      # eJobs: singura sursă RO cu descrieri complete; ~106 anunțuri/rulare.
+      sources: ["jobspy", "ro_boards"]
+      best_effort_sources: ["linkedin", "ro_boards"]
+
+    saudi:
+      country: "saudi arabia"
+      language: "en"
+      locations: ["Saudi Arabia"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    uae:
+      country: "united arab emirates"
+      language: "en"
+      locations: ["United Arab Emirates"]
+      remote: false
       keyword_groups: *skills_groups
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
@@ -143,9 +212,22 @@ scraping:
       - "freelance"
       - "flexible hours"
     min_salary: 0
-    # Sub acest scor local jobul NU ajunge la AI
-    # Calibrat pe distribuția reală: titlu perfect + bonus keyword = ~35
-    min_prescore: 30
+    # Sub acest scor local jobul NU ajunge nici în Sheet, nici la AI.
+    # Era 30 („titlu perfect + bonus keyword = ~35", JOB-47). Cu emailul scos
+    # din rolul de filtru, ăsta a rămas SINGURUL prag, deci trebuie să fie și
+    # singurul care decide relevanța.
+    min_prescore: 10
+    # Emailul NU mai e filtru — ar goli exact ce se caută. Joburile remote/
+    # nomad se aplică prin portal, deci n-au adresă (LinkedIn: 0%), pe când
+    # adresele vin din anunțurile locale („Bewerbung an …"): DE 17%, AT 13%,
+    # SE 10%, NL 10%. Cerând emailul, Sheet-ul rămânea fără tocmai joburile
+    # remote. În loc de asta, fiecare rând declară CUM se aplică, în col AA
+    # „Bewerbungsart" (`Email` / `Portal`) — vezi `job_to_sheet_row`.
+    # Mecanismul rămâne implementat și testat: pus pe `true` (global sau per
+    # piață, `scraping.markets.<piață>.require_email`), poarta respinge din nou
+    # joburile fără adresă. Adresele `privacy@`/`reasonable.accommodations@` nu
+    # contează ca adresă nici așa (vezi `_email_rank`).
+    require_email: false
 
 # ── AI / LLM ───────────────────────────────────────────────
 ai:
@@ -188,7 +270,17 @@ tracker:
 
 # ── Documente ───────────────────────────────────────────────
 documents:
-  cv_file: "documents/cv/Resume George Sebastian Cucuiet.pdf"
+  # CV per limbă. Limba jobului (`market.language` → col „Sprache") alege
+  # varianta, ca Anschreiben-ul și CV-ul să fie în aceeași limbă: `de`/`at`
+  # primesc Lebenslauf, restul piețelor Resume.
+  # Ambele au STRAT DE TEXT real (generate din sursele HTML din bundle-ul de
+  # design) — varianta exportată ca imagine nu putea fi citită de niciun ATS,
+  # iar 104 din 143 de rânduri din Sheet se aplică prin portal.
+  cv_files:
+    de: "documents/cv/Lebenslauf_George_Sebastian_Cucuiet.pdf"
+    en: "documents/cv/Resume_George_Sebastian_Cucuiet.pdf"
+  # Rezervă pentru limbile fără intrare în `cv_files`.
+  cv_file: "documents/cv/Resume_George_Sebastian_Cucuiet.pdf"
   certificates_dir: "documents/certificates"
   references_dir: "documents/references"
   cover_letters_dir: "documents/cover_letters/generated"

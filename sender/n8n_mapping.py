@@ -59,6 +59,16 @@ def job_to_sheet_row(job: dict) -> dict:
     if score is not None and score != "":
         row["Match Score"] = score
 
+    # Col AA „Bewerbungsart" spune CUM se aplică rândul. Joburile remote/nomad
+    # n-au aproape niciodată adresă (LinkedIn: 0%) — se aplică prin portalul
+    # din „Apply URL". Fără marcaj, un astfel de rând arăta identic cu unul
+    # trimisibil și utilizatorul rămânea blocat.
+    # Se emite DOAR când payload-ul chiar poartă `email_hr`: comanda venită din
+    # `JobApp Pending` conține un subset de câmpuri, iar a scrie „Portal" pe
+    # baza unei chei absente ar șterge marcajul corect al unui rând cu adresă.
+    if "email_hr" in job:
+        row["Bewerbungsart"] = "Email" if str(job.get("email_hr") or "").strip() else "Portal"
+
     # Col P „Sende Befehl" e trigger-ul scris de om; o atingem doar când
     # apelantul cere explicit resetarea ei (altfel ar rămâne SENDEN pe veci
     # și poll-ul ar reprocesa același rând la fiecare tick).

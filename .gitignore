@@ -37,3 +37,16 @@ config/n8n_bewerbung_brevo_workflow.json
 
 # Dashboard local DB
 dashboard/db.sqlite3
+client_secret_*.json
+
+# Documente personale de candidatură din rădăcină (CV-uri, bundle-uri de design
+# exportate din Claude Design, ghiduri terțe). Variantele canonice stau în
+# documents/cv/, care e deja ignorat — astea sunt copii de lucru, ~16 MB.
+/Resume*.pdf
+/Lebenslauf*.pdf
+/Bewerbung*.pdf
+/*handoff.zip
+/Claude_Indeed_Job_Hunter_*.pdf
+
+# Artefacte de tooling local
+.jez/

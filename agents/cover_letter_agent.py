@@ -12,7 +12,13 @@ Responsabilități:
 from datetime import datetime
 from pathlib import Path
 
-from agents.base_agent import BaseAgent, AgentResult, AgentStatus
+from agents.base_agent import (
+    AgentResult,
+    AgentStatus,
+    BaseAgent,
+    cv_path_for,
+    job_language,
+)
 from generators.cover_letter_gen import CoverLetterGenerator
 
 
@@ -107,7 +113,9 @@ class CoverLetterAgent(BaseAgent):
                     text_to_pdf(text, pdf_path)
                     job["cover_letter_pdf_path"] = str(pdf_path)
 
-                    cv = self.project_root / self.config.get("documents", {}).get("cv_file", "")
+                    # CV în limba scrisorii — „Bewerbung Komplett" le lipește
+                    # pe amândouă, deci o nepotrivire de limbă e vizibilă direct.
+                    cv = cv_path_for(self.config, job_language(job))
                     if cv.exists():
                         komplett = filepath.with_name(
                             filepath.stem.replace("Anschreiben_", "Bewerbung_Komplett_") + ".pdf"

@@ -98,3 +98,31 @@ def test_job_to_sheet_row_maps_gefunden_am():
 def test_sheet_row_to_job_roundtrips_gefunden_am():
     job = sheet_row_to_job({"Apply URL": "u", "Datum gefunden": "2026-07-09"})
     assert job["gefunden_am"] == "2026-07-09"
+
+
+class TestBewerbungsart:
+    """Col AA „Bewerbungsart" spune CUM se aplică. Fără ea, un rând fără
+    adresă arăta identic cu unul trimisibil, iar utilizatorul rămânea blocat
+    („nu am email, deci nu mă pot conecta"). Joburile remote/nomad n-au
+    aproape niciodată email — se aplică prin portal, via „Apply URL"."""
+
+    def test_job_with_email_is_marked_email(self):
+        row = job_to_sheet_row({"url": "https://x.de/1", "email_hr": "jobs@x.de"})
+        assert row["Bewerbungsart"] == "Email"
+
+    def test_job_without_email_is_marked_portal(self):
+        row = job_to_sheet_row({"url": "https://x.de/1", "email_hr": ""})
+        assert row["Bewerbungsart"] == "Portal"
+
+    def test_partial_payload_never_overwrites_the_column(self):
+        """`--step poll` trimite doar un subset de câmpuri. Dacă `email_hr`
+        lipsește CU TOTUL din payload, n-avem de unde ști ruta — a scrie
+        „Portal" ar șterge marcajul corect al unui rând trimisibil.
+        """
+        row = job_to_sheet_row({"url": "https://x.de/1", "email_status": "GESENDET"})
+        assert "Bewerbungsart" not in row
+
+    def test_blank_email_key_still_means_portal(self):
+        """Cheia prezentă, dar goală, e o informație: chiar nu există adresă."""
+        row = job_to_sheet_row({"url": "https://x.de/1", "email_hr": "   "})
+        assert row["Bewerbungsart"] == "Portal"

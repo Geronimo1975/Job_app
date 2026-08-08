@@ -36,6 +36,19 @@ _MAX_FLEX_BONUS = 20
 # semnale bune poate compensa (spre deosebire de exclude_keywords).
 _W_NEGATIVE = -60
 
+# Separatorii după care titlul trece de la ROL la calificativ („– Conversational
+# AI & Sales Solutions", ", Sales Enablement", "(m/w/d)"). Penalizarea de rol se
+# uită doar în capul titlului: „Junior AI Engineer – … & Sales Solutions" e un
+# post de AI Engineer, nu de vânzări, dar cădea la 0 (găsit live 2026-08-06).
+# Cratima intră în listă DOAR încadrată de spații: „Pre-Sales"/„Full-Stack" sunt
+# cuvinte compuse, nu titlu urmat de calificativ.
+_TITLE_QUALIFIER_SPLIT = re.compile(r"[–—|(,:]|\s-\s")
+
+
+def _role_head(title: str) -> str:
+    """Partea din titlu care spune ce E jobul, fără calificative."""
+    return _TITLE_QUALIFIER_SPLIT.split(title, maxsplit=1)[0]
+
 
 def skill_tokens(skill: str) -> list[str]:
     """Sparge un skill din config în termeni căutabili.
@@ -108,10 +121,12 @@ def prescore(job: dict, config: dict,
     score = 0
     reasons: list[str] = []
 
-    # ── Penalizare rol nepotrivit: doar pe titlu, cuvânt întreg ──
-    # (pe descriere ar penaliza „work with the sales team")
+    # ── Penalizare rol nepotrivit: doar pe CAPUL titlului, cuvânt întreg ──
+    # (pe descriere ar penaliza „work with the sales team"; pe calificativ ar
+    # penaliza „AI Engineer – … & Sales Solutions", care e tocmai un post bun)
+    role_head = _role_head(title_l)
     for negative in filters.get("negative_keywords", []) or []:
-        if _contains(title_l, negative.lower()):
+        if _contains(role_head, negative.lower()):
             score += _W_NEGATIVE
             reasons.append(f"rol nepotrivit: {negative}")
 
@@ -154,6 +169,23 @@ def prescore(job: dict, config: dict,
     score += min(flex_bonus, _MAX_FLEX_BONUS)
 
     return max(0, min(score, 100)), reasons
+
+
+def requires_email(job: dict, config: dict) -> bool:
+    """True dacă jobul are nevoie de adresă de contact ca să fie reținut.
+
+    Regula e per PIAȚĂ, nu globală, fiindcă emailul nu există peste tot:
+    anunțurile DE/NL scriu „Bewerbung an …", pe când cele din România (și din
+    piețele remote/EN) trimit la un portal — măsurat 2026-08-06, eJobs dă un
+    email la 106 anunțuri. O regulă globală ar goli exact piețele fără email.
+    `scraping.markets.<piață>.require_email` bate `scraping.filters.
+    require_email`; joburile fără piață cunoscută urmează regula globală.
+    """
+    scraping = config.get("scraping", {}) or {}
+    market_cfg = (scraping.get("markets", {}) or {}).get(job.get("market")) or {}
+    if "require_email" in market_cfg:
+        return bool(market_cfg["require_email"])
+    return bool((scraping.get("filters", {}) or {}).get("require_email", False))
 
 
 def passes_prefilter(job: dict, config: dict) -> bool:

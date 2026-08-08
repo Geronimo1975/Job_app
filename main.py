@@ -41,7 +41,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from agents.base_agent import AgentResult, AgentStatus, load_config, setup_logger
 from agents.scraper_agent import ScraperAgent
 from agents.analyzer_agent import AnalyzerAgent
-from filters.relevance import passes_prefilter, prescore
+from filters.relevance import passes_prefilter, prescore, requires_email
 from store.seen import ANALIZAT, RESPINS_PREFILTRU, SeenIndex, company_title_key, url_key
 from agents.cover_letter_agent import CoverLetterAgent
 from agents.email_agent import EmailAgent
@@ -156,7 +156,12 @@ def apply_prefilter_gate(
     ruleze doar pe ce are șansă. Joburile respinse se memorează, altfel ar
     fi re-evaluate la fiecare rulare.
     """
-    stats = {"total": len(jobs), "fara_cheie": 0, "deja_vazute": 0, "respinse": 0, "retinute": 0}
+    stats = {"total": len(jobs), "fara_cheie": 0, "deja_vazute": 0,
+             "fara_email": 0, "respinse": 0, "retinute": 0}
+    # Fără adresă de contact nu există destinatar: `EmailAgent` doar loghează
+    # „lipsă email" și sare rândul, deci jobul ar ocupa un rând în Sheet fără
+    # să poată fi trimis vreodată. Regula se citește PER JOB, fiindcă e per
+    # piață (vezi `requires_email`): emailul nu există pe toate piețele.
 
     # Joburile fără nicio cheie de identitate nu pot fi nici deduplicate,
     # nici urmărite — le numărăm separat, nu ca „deja văzute".
@@ -172,6 +177,12 @@ def apply_prefilter_gate(
         if not passes_prefilter(job, config):
             seen.mark(job, RESPINS_PREFILTRU)
             stats["respinse"] += 1
+            continue
+        # Scorul se evaluează ÎNAINTEA emailului, ca statistica să spună de ce
+        # a căzut jobul de fapt (irelevant vs. relevant dar fără destinatar).
+        if requires_email(job, config) and not str(job.get("email_hr") or "").strip():
+            seen.mark(job, RESPINS_PREFILTRU)
+            stats["fara_email"] += 1
             continue
         job["prescore"] = score
         # Motivele ajung în col „Keywords Match" — auditabil de ce a trecut.
@@ -239,10 +250,14 @@ def run_pipeline(args):
             fara_cheie_suffix = (
                 f" ({gate_stats['fara_cheie']} fără cheie)" if gate_stats["fara_cheie"] else ""
             )
+            fara_email_suffix = (
+                f"{gate_stats['fara_email']} fără email, " if gate_stats["fara_email"] else ""
+            )
             print(
                 f"  Prefiltru: {gate_stats['total']} găsite{fara_cheie_suffix} → "
                 f"{gate_stats['deja_vazute']} deja văzute, "
-                f"{gate_stats['respinse']} sub prag → "
+                f"{gate_stats['respinse']} sub prag, "
+                f"{fara_email_suffix}→ "
                 f"{gate_stats['retinute']} spre analiză"
             )
             print("📊 Sync → Excel Tracker...")

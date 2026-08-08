@@ -95,8 +95,13 @@ class N8nClient:
                 urls.append(url)
         return urls
 
-    def upload_doc(self, pdf_path: str | Path, row: int, apply_url: str = "") -> dict:
-        """Urcă un PDF la n8n → Google Drive; n8n scrie linkul în col O „Anschreiben PDF".
+    def upload_doc(self, pdf_path: str | Path, row: int = 0, apply_url: str = "") -> dict:
+        """Urcă un PDF la n8n → Google Drive (fișier cu link public read-only).
+
+        Workflow-ul NU mai scrie col O direct (scrierea pe rând fix risca
+        celula altui rând) — linkul întors aici se trimite prin `ingest`
+        pe cheia `cover_letter`, cu match pe Apply URL. `row` e păstrat
+        doar pentru compatibilitatea payload-ului.
 
         Întoarce `{ok, link, fileId}` sau no-op dacă n8n e dezactivat.
         """

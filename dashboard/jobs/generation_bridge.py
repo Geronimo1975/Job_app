@@ -7,6 +7,7 @@ Nicio funcție nu ridică excepții spre views — eșecul e codat în {ok, erro
 import os
 from pathlib import Path
 
+from agents.base_agent import cv_path_for, package_is_stale
 from generators.cover_letter_gen import CoverLetterGenerator
 from generators.email_body_gen import EmailBodyGenerator
 from generators.pdf_gen import assemble_bewerbung, text_to_pdf
@@ -17,23 +18,33 @@ from .sheet_bridge import _client_or_error, load_pipeline_config
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _docs_paths(cfg: dict) -> tuple[Path, list[Path]]:
-    """CV-ul + certificatele, cu aceleași chei de config ca EmailAgent."""
+def _docs_paths(cfg: dict, language: str | None = None) -> tuple[Path, list[Path]]:
+    """CV-ul + certificatele, cu aceeași logică de limbă ca EmailAgent.
+
+    `language` alege între Lebenslauf (DE) și Resume (EN) — fără el, un
+    Anschreiben german pleca însoțit de CV-ul englezesc.
+    """
     docs = cfg.get("documents", {}) or {}
-    cv = _REPO_ROOT / docs.get("cv_file", "documents/cv/Resume George Sebastian Cucuiet.pdf")
+    cv = cv_path_for(cfg, language)
     certs_dir = _REPO_ROOT / docs.get("certificates_dir", "documents/certificates")
     certs = sorted(certs_dir.glob("*.pdf")) if certs_dir.exists() else []
     return cv, certs
 
 
-def _collect_attachments(bewerbung_pdf: str, anschreiben_pdf: str, cfg: dict) -> list[str]:
-    """Prioritatea din EmailAgent: Komplett singur; altfel Anschreiben+CV+certificate."""
-    if bewerbung_pdf and Path(bewerbung_pdf).exists():
+def _collect_attachments(bewerbung_pdf: str, anschreiben_pdf: str, cfg: dict,
+                         language: str | None = None) -> list[str]:
+    """Prioritatea din EmailAgent: Komplett singur; altfel Anschreiben+CV+certificate.
+
+    Komplett-ul se folosește DOAR dacă e mai nou decât CV-ul și certificatele
+    pe care le conține — altfel un pachet generat înainte de schimbarea CV-ului
+    ar trimite la nesfârșit CV-ul vechi (vezi `package_is_stale`).
+    """
+    cv, certs = _docs_paths(cfg, language)
+    if bewerbung_pdf and not package_is_stale(Path(bewerbung_pdf), cv, *certs):
         return [bewerbung_pdf]
     out: list[str] = []
     if anschreiben_pdf and Path(anschreiben_pdf).exists():
         out.append(anschreiben_pdf)
-    cv, certs = _docs_paths(cfg)
     if cv.exists():
         out.append(str(cv))
     out.extend(str(p) for p in certs)
@@ -70,7 +81,7 @@ def generate_package(job) -> dict:
         pdf_path = txt_path.with_suffix(".pdf")
         text_to_pdf(text, pdf_path)
         anschreiben_pdf = str(pdf_path)
-        cv, certs = _docs_paths(cfg)
+        cv, certs = _docs_paths(cfg, language)
         if cv.exists():
             komplett = pdf_path.with_name(
                 pdf_path.stem.replace("Anschreiben_", "Bewerbung_Komplett_") + ".pdf"
@@ -97,7 +108,7 @@ def generate_package(job) -> dict:
         "anschreiben_text": text,
         "anschreiben_pdf_path": anschreiben_pdf,
         "bewerbung_pdf_path": bewerbung_pdf,
-        "attachments": _collect_attachments(bewerbung_pdf, anschreiben_pdf, cfg),
+        "attachments": _collect_attachments(bewerbung_pdf, anschreiben_pdf, cfg, language),
     }
 
 
@@ -110,7 +121,7 @@ def regenerate_pdfs(job) -> dict:
         pdf_path = Path(job.anschreiben_pdf_path)
         text_to_pdf(job.anschreiben_text, pdf_path)
         if job.bewerbung_pdf_path:
-            cv, certs = _docs_paths(cfg)
+            cv, certs = _docs_paths(cfg, job.language or None)
             if not cv.exists():
                 # Altfel Komplett-ul de pe disc ar rămâne cu textul VECHI și
                 # exact el are prioritate la atașare.
@@ -132,19 +143,37 @@ def send_package(job, live: bool, provider: str | None = None) -> dict:
         cfg = load_pipeline_config()
     except Exception as e:
         return {"ok": False, "live": live, "error": f"config necititbil: {e}"}
+    # Lista salvată la generare poate fi ÎNVECHITĂ: „Bewerbung Komplett" are
+    # CV-ul lipit înăuntru, deci un CV nou nu se vede în ea. Se recalculează la
+    # trimitere — altfel un pachet generat înainte de schimbarea CV-ului trimite
+    # la nesfârșit CV-ul vechi (întâmplat pe 2026-08-08). Se și persistă, ca
+    # ecranul de confirmare să arate exact ce pleacă.
+    fresh = _collect_attachments(job.bewerbung_pdf_path, job.anschreiben_pdf_path,
+                                 cfg, job.language or None)
+    if fresh != (job.attachments_json or []):
+        job.attachments_json = fresh
+        if job.pk:
+            job.save(update_fields=["attachments_json"])
+
     if live:
         # Fără parolă în env, SmtpSender ar cădea pe getpass() → request blocat.
         err = _smtp_password_env_missing(cfg, provider)
         if err:
             return {"ok": False, "live": True, "error": err}
         # LIVE fără atașamente (sau cu fișiere dispărute) = pachet stricat.
-        paths = [Path(p) for p in (job.attachments_json or [])]
+        paths = [Path(p) for p in fresh]
         missing = [p.name for p in paths if not p.exists()]
-        if not paths or missing:
-            detail = ", ".join(missing) if missing else "(niciunul colectat)"
+        # Garda se leagă de SCRISOARE, nu de „lista e nevidă": recalcularea
+        # găsește mereu CV-ul, deci o verificare pe lungime ar trece chiar și
+        # pentru un pachet fără Anschreiben — adică fără candidatură.
+        letter = job.bewerbung_pdf_path or job.anschreiben_pdf_path
+        if not paths or missing or not (letter and Path(letter).exists()):
+            detail = (", ".join(missing) if missing
+                      else "lipsește Anschreiben-ul" if not letter
+                      else "(niciunul colectat)")
             return {"ok": False, "live": True,
                     "error": f"atașamente lipsă: {detail} — re-Execută pachetul."}
-    attachments = [Path(p) for p in (job.attachments_json or []) if Path(p).exists()]
+    attachments = [Path(p) for p in fresh if Path(p).exists()]
     try:
         smtp = SmtpSender(cfg, _REPO_ROOT)
         msg = smtp.build_email(

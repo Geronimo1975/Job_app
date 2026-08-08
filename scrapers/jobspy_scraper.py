@@ -41,6 +41,50 @@ WARNING_PREFIX = "[avertisment]"
 # `emails`: virgulă (forma produsă de upstream), punct-și-virgulă, spațiu.
 _EMAIL_SEPARATORS = re.compile(r"[,;\s]+")
 
+# Adrese care apar în textul anunțurilor dar NU primesc candidaturi: clauze
+# legale standard, contacte de presă sau de protecția datelor. Măsurat live
+# (2026-08-06) pe UAE/RO/CH, majoritatea adreselor extrase erau exact astea
+# (`reasonable.accommodations@`, `privacy@`, `paytransparency@`) — o
+# candidatură trimisă acolo e mai rea decât lipsa adresei: arată ca spam.
+# Potrivire pe subșir: termenii sunt destul de lungi cât să nu dea fals pozitiv.
+_EMAIL_DENY_SUBSTRINGS = (
+    "privacy", "datenschutz", "legal", "compliance", "accommodation",
+    "paytransparency", "pay-transparency", "press", "media", "noreply",
+    "no-reply", "donotreply", "do-not-reply", "unsubscribe", "abuse",
+    "postmaster", "webmaster", "security", "inclusion", "diversity",
+)
+# Prea scurți pentru subșir („dpo" s-ar prinde în „adpower") — token întreg.
+_EMAIL_DENY_TOKENS = frozenset({"dpo", "gdpr"})
+
+# Adrese tipice de candidatură — preferate chiar dacă apar mai târziu în text.
+_EMAIL_PREFER_SUBSTRINGS = (
+    "bewerbung", "recruit", "career", "karriere", "vacature", "sollicitatie",
+    "stellen", "hiring", "talent", "application", "personal",
+)
+# `hr` ca subșir s-ar prinde în „chris@" — token întreg.
+_EMAIL_PREFER_TOKENS = frozenset({"hr", "jobs", "job", "apply", "work", "people"})
+
+_RANK_APPLICATION = 0   # adresă de candidatură
+_RANK_NEUTRAL = 1       # plauzibilă, fără semnal clar
+_RANK_AVOID = 2         # boilerplate — nu se folosește niciodată
+
+
+def _email_rank(address: str) -> int:
+    """Cât de plauzibil e că adresa chiar primește candidaturi (mic = bun)."""
+    local = address.rsplit("@", 1)[0].lower()
+    # Local part care începe cu punctuație = adresă tăiată de parserul jobspy.
+    # Observate live: `_Acquisition@eon.com` (din „Talent_Acquisition@") și
+    # `_mb@oracle.com`. Sintactic valide, dar ambele ar da bounce — exact
+    # eroarea pe care `require_email` trebuie s-o prevină.
+    if local[:1] in {"_", ".", "-", "+"}:
+        return _RANK_AVOID
+    tokens = {t for t in re.split(r"[^a-z0-9]+", local) if t}
+    if any(s in local for s in _EMAIL_DENY_SUBSTRINGS) or (tokens & _EMAIL_DENY_TOKENS):
+        return _RANK_AVOID
+    if any(s in local for s in _EMAIL_PREFER_SUBSTRINGS) or (tokens & _EMAIL_PREFER_TOKENS):
+        return _RANK_APPLICATION
+    return _RANK_NEUTRAL
+
 
 def _text(value: Any) -> str:
     """Text curat dintr-o celulă pandas.
@@ -55,8 +99,30 @@ def _text(value: Any) -> str:
     return str(value).strip()
 
 
+def _is_remote_row(row: Any) -> bool:
+    """True dacă rândul jobspy descrie un job remote.
+
+    Folosit când `is_remote` a fost scos din apel (vezi `_sanitize`), deci
+    filtrul trebuie aplicat local. `is_remote` e semnalul principal, dar Indeed
+    nu-l completează mereu; „remote" scris explicit în titlu sau locație e la
+    fel de neechivoc și recuperează anunțurile pe care flagul le ratează.
+    """
+    flag = row.get("is_remote")
+    if flag is True or _text(flag).lower() == "true":
+        return True
+    haystack = f"{_text(row.get('title'))} {_text(row.get('location'))}".lower()
+    return re.search(r"\bremote\b", haystack) is not None
+
+
 def _first_email(value: Any) -> str:
-    """Primul email plauzibil din coloana `emails`.
+    """Cea mai plauzibilă adresă de CANDIDATURĂ din coloana `emails`.
+
+    Nu mai e „prima adresă plauzibilă": ordinea din anunț nu spune nimic despre
+    cui i se trimite candidatura, iar clauzele legale („reasonable
+    accommodations", „pay transparency") apar de regulă ÎNAINTEA adresei de
+    recrutare. Se alege adresa cu cel mai bun `_email_rank`, iar cele marcate
+    `_RANK_AVOID` nu se folosesc deloc — un job fără adresă utilizabilă trebuie
+    să arate ca un job fără adresă, ca poarta `require_email` să-l respingă.
 
     Forma REALĂ din producție e un singur string cu TOATE adresele lipite:
     upstream face `", ".join(emails)` înainte de a construi DataFrame-ul
@@ -72,11 +138,18 @@ def _first_email(value: Any) -> str:
         raw = list(value)
     else:
         return ""
+
+    best, best_rank = "", _RANK_AVOID
     for item in raw:
         for candidate in _EMAIL_SEPARATORS.split(_text(item)):
-            if "@" in candidate and "." in candidate.rsplit("@", 1)[-1]:
-                return candidate
-    return ""
+            if "@" not in candidate or "." not in candidate.rsplit("@", 1)[-1]:
+                continue
+            rank = _email_rank(candidate)
+            if rank < best_rank:
+                best, best_rank = candidate, rank
+                if rank == _RANK_APPLICATION:
+                    return best      # nu există ceva mai bun
+    return best
 
 
 class JobSpyScraper:
@@ -177,8 +250,17 @@ class JobSpyScraper:
         if df is None or df.empty:
             return [], warnings
 
+        # Când `_sanitize` a scos `is_remote` din apel, filtrul cerut de piață
+        # se aplică aici. Condiția se citește din kwargs, nu dintr-un flag
+        # separat: pe site-urile unde filtrul a ajuns la upstream (LinkedIn) o
+        # a doua filtrare ar tăia rândurile pe un câmp pe care acele site-uri
+        # nu-l completează.
+        filter_remote = bool(q.remote) and "is_remote" not in kwargs
+
         jobs = []
         for _, row in df.iterrows():
+            if filter_remote and not _is_remote_row(row):
+                continue
             job = self._normalize_job(row, q)
             if job:
                 jobs.append(job)
@@ -192,8 +274,29 @@ class JobSpyScraper:
         `(job_type & is_remote)` / `easy_apply`. Trimise împreună, unul cade
         silențios — motiv pentru care piața `ro_remote` credea că filtrează
         pe vechime, dar nu filtra.
+
+        Ordinea contează: `is_remote` se evaluează PRIMUL, fiindcă renunțarea
+        la el poate face `hours_old` folosibil din nou.
         """
         warnings: list[str] = []
+
+        # Pe Indeed, `is_remote` nu costă doar `hours_old` — anulează complet
+        # `search_term`. Verificat live (2026-08-06, UAE): interogarea booleană
+        # „AI Developer/AI Automation/…" întoarce cu `is_remote=True` joburi
+        # fără nicio legătură („Senior Real Estate Broker", „Nursery Admin
+        # Manager"), identice pentru toate cele 4 grupuri de keywords — semn că
+        # termenul e ignorat. Fără `is_remote`: „AI Engineer / Agentic AI
+        # Developer", „AI Automation Engineer". Termenul de căutare valorează
+        # mai mult decât filtrul, deci filtrul cade și remote se aplică local,
+        # pe rândurile întoarse (vezi `_call` + `_is_remote_row`).
+        if site == "indeed" and kwargs.get("is_remote") and kwargs.get("search_term"):
+            kwargs.pop("is_remote")
+            warnings.append(
+                f"{WARNING_PREFIX} [{q.market_key}/indeed] am renunțat la "
+                "is_remote: Indeed ignoră search_term când filtrul remote e "
+                "activ (remote se filtrează local, pe câmpul întors)"
+            )
+
         if (
             site == "indeed"
             and kwargs.get("hours_old") is not None

@@ -12,7 +12,14 @@ Responsabilități:
 from datetime import datetime
 from pathlib import Path
 
-from agents.base_agent import BaseAgent, AgentResult, AgentStatus
+from agents.base_agent import (
+    AgentResult,
+    AgentStatus,
+    BaseAgent,
+    cv_path_for,
+    job_language,
+    package_is_stale,
+)
 from generators.email_body_gen import EmailBodyGenerator
 from sender.smtp_sender import SmtpSender
 
@@ -62,7 +69,9 @@ class EmailAgent(BaseAgent):
             position = job.get("title", job.get("position", "Unknown"))
             to_email = job.get("email_hr", job.get("Kontakt Email", ""))
             contact = job.get("contact_person", job.get("Kontakt Person", ""))
-            language = job.get("analysis", {}).get("language", "de")
+            # Aceeași sursă de adevăr ca la alegerea CV-ului, altfel scrisoarea
+            # și CV-ul pot ieși în limbi diferite.
+            language = job_language(job)
 
             if not to_email:
                 self.logger.warning(f"  ⚠ {company} — lipsă email, skip")
@@ -150,10 +159,25 @@ class EmailAgent(BaseAgent):
         """
         docs_config = self.config.get("documents", {})
 
-        # 1. PDF combinat — autosuficient
+        # Sursele lipite în „Komplett": trebuie știute înainte, ca să putem
+        # verifica dacă pachetul le mai reflectă.
+        cv_path = cv_path_for(self.config, job_language(job))
+        certs_dir = self.project_root / docs_config.get(
+            "certificates_dir", "documents/certificates"
+        )
+        certs = sorted(certs_dir.glob("*.pdf")) if certs_dir.exists() else []
+
+        # 1. PDF combinat — autosuficient, DAR doar dacă e mai nou decât ce
+        #    conține. Un pachet generat înainte de schimbarea CV-ului ar trimite
+        #    la nesfârșit CV-ul vechi, fiindcă e preferat tuturor celorlalte.
         komplett = job.get("bewerbung_pdf_path", "")
-        if komplett and Path(komplett).exists():
+        if komplett and not package_is_stale(Path(komplett), cv_path, *certs):
             return [Path(komplett)]
+        if komplett and Path(komplett).exists():
+            self.logger.warning(
+                f"  ⚠ „Bewerbung Komplett\" e mai vechi decât CV-ul — îl ignor "
+                f"și atașez Anschreiben + {cv_path.name}"
+            )
 
         attachments = []
 
@@ -164,20 +188,11 @@ class EmailAgent(BaseAgent):
         if anschreiben and Path(anschreiben).exists():
             attachments.append(Path(anschreiben))
 
-        # CV
-        cv_path = self.project_root / docs_config.get(
-            "cv_file", "documents/cv/Resume George Sebastian Cucuiet.pdf"
-        )
+        # CV — în aceeași limbă ca Anschreiben-ul (vezi `cv_path_for`).
         if cv_path.exists():
             attachments.append(cv_path)
 
-        # Certificate
-        certs_dir = self.project_root / docs_config.get(
-            "certificates_dir", "documents/certificates"
-        )
-        if certs_dir.exists():
-            attachments.extend(sorted(certs_dir.glob("*.pdf")))
-
+        attachments.extend(certs)
         return attachments
 
     def _save_send_log(self, results: list[dict]) -> None:

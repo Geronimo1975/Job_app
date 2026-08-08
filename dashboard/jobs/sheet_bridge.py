@@ -43,8 +43,36 @@ def job_to_internal(job) -> dict:
         if job.created_at else "",
         "notizen": job.notizen,
         "match_score": job.match_score,
+        # Col O „Anschreiben PDF" — DOAR linkul Drive (nu calea locală, pe
+        # care nimeni n-o poate deschide din Sheet).
+        "cover_letter": job.anschreiben_drive_link,
     }
     return {k: v for k, v in data.items() if v is not None and v != ""}
+
+
+def upload_anschreiben(job, client: N8nClient) -> dict:
+    """Urcă Anschreiben-ul în Drive (o singură dată) și reține linkul pe job.
+
+    Idempotent: dacă jobul are deja link, nu re-urcă. Eșecul NU e fatal
+    pentru push — upsert-ul de metadate merge înainte și fără link.
+    """
+    if job.anschreiben_drive_link:
+        return {"ok": True, "link": job.anschreiben_drive_link, "skipped": True}
+    pdf = str(job.anschreiben_pdf_path or "").strip()
+    if not pdf:
+        return {"ok": True, "skipped": True}  # nimic generat încă — nimic de urcat
+    if not Path(pdf).exists():
+        return {"ok": False, "error": f"PDF-ul generat nu mai există pe disc: {pdf}"}
+    try:
+        res = client.upload_doc(pdf, apply_url=job.url)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    link = str((res or {}).get("link", "") or "").strip()
+    if not link:
+        return {"ok": False, "error": f"n8n n-a întors link Drive: {res}"}
+    job.anschreiben_drive_link = link
+    job.save(update_fields=["anschreiben_drive_link"])
+    return {"ok": True, "link": link}
 
 
 def _client_or_error(cfg: dict) -> tuple[N8nClient | None, str]:
@@ -70,11 +98,15 @@ def push_to_sheet(job) -> dict:
     client, err = _client_or_error(cfg)
     if client is None:
         return {"ok": False, "error": err}
+    # Documentul întâi (best-effort): linkul Drive intră în același upsert.
+    up = upload_anschreiben(job, client)
     try:
         client.ingest([job_to_internal(job)])
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True}
+    if not up["ok"]:
+        return {"ok": True, "warning": f"metadatele au ajuns în Sheet, dar upload-ul PDF a eșuat: {up['error']}"}
+    return {"ok": True, "link": up.get("link", "")}
 
 
 def mark_sent_in_sheet(job) -> dict:

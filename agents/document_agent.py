@@ -13,7 +13,13 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from agents.base_agent import BaseAgent, AgentResult, AgentStatus
+from agents.base_agent import (
+    AgentResult,
+    AgentStatus,
+    BaseAgent,
+    cv_path_for,
+    job_language,
+)
 
 
 # Mapping extensie → director
@@ -121,16 +127,17 @@ class DocumentAgent(BaseAgent):
         result = AgentResult(agent_name=self.name, status=AgentStatus.RUNNING)
         checks = []
 
-        # CV
-        cv_path = self.project_root / self.docs_config.get(
-            "cv_file", "documents/cv/Resume George Sebastian Cucuiet.pdf"
-        )
-        checks.append({
-            "document": "CV / Lebenslauf",
-            "path": str(cv_path),
-            "exists": cv_path.exists(),
-            "size_kb": cv_path.stat().st_size / 1024 if cv_path.exists() else 0,
-        })
+        # CV — toate variantele de limbă configurate. Fără asta, lipsa
+        # Lebenslauf-ului ar ieși la iveală abia la prima trimitere pe DE.
+        languages = sorted((self.docs_config.get("cv_files") or {}).keys()) or [None]
+        for lang in languages:
+            cv_path = cv_path_for(self.config, lang)
+            checks.append({
+                "document": f"CV ({lang})" if lang else "CV / Lebenslauf",
+                "path": str(cv_path),
+                "exists": cv_path.exists(),
+                "size_kb": cv_path.stat().st_size / 1024 if cv_path.exists() else 0,
+            })
 
         # Certificates
         certs_dir = self.project_root / self.docs_config.get(
@@ -209,10 +216,8 @@ class DocumentAgent(BaseAgent):
 
         copied = []
 
-        # CV
-        cv_path = self.project_root / self.docs_config.get(
-            "cv_file", "documents/cv/Resume George Sebastian Cucuiet.pdf"
-        )
+        # CV — varianta în limba jobului (vezi `cv_path_for`).
+        cv_path = cv_path_for(self.config, job_language(job))
         if cv_path.exists():
             shutil.copy2(cv_path, package_dir / cv_path.name)
             copied.append(cv_path.name)

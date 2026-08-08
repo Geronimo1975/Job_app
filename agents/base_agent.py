@@ -68,6 +68,62 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
+# Folosit doar când configul nu spune nimic — nu e „CV-ul", ci plasa de siguranță.
+_DEFAULT_CV = "documents/cv/Resume_George_Sebastian_Cucuiet.pdf"
+
+
+def job_language(job: dict, default: str = "de") -> str:
+    """Limba în care se face candidatura pentru acest job.
+
+    Ordinea: analiza AI (a citit anunțul) → limba pieței (`market.language`,
+    care ajunge și în col „Sprache") → implicit. Treapta din mijloc lipsea:
+    fără analiză, un job de pe o piață engleză primea email și CV în germană.
+    """
+    analysis = job.get("analysis") or {}
+    return (
+        str(analysis.get("language") or "").strip()
+        or str(job.get("language") or "").strip()
+        or default
+    )
+
+
+def cv_path_for(config: dict, language: str | None = None) -> Path:
+    """CV-ul potrivit limbii cerute, ca traseu absolut.
+
+    Profilul are două CV-uri echivalente — `Lebenslauf` (DE) și `Resume` (EN);
+    un Anschreiben german însoțit de un CV englezesc e o inconsecvență pe care
+    o vede imediat cel care citește candidatura.
+
+    `documents.cv_files.<limbă>` bate `documents.cv_file`, iar limbile
+    neconfigurate cad pe `cv_file` — deci o config veche, fără `cv_files`,
+    funcționează neschimbată.
+    """
+    docs = config.get("documents", {}) or {}
+    fallback = docs.get("cv_file") or _DEFAULT_CV
+    per_language = docs.get("cv_files") or {}
+    key = str(language or "").strip().lower()
+    return PROJECT_ROOT / (per_language.get(key) or fallback)
+
+
+def package_is_stale(package: Path, *sources: Path) -> bool:
+    """True dacă `package` a fost construit ÎNAINTEA vreuneia dintre surse.
+
+    „Bewerbung Komplett" nu e un link către CV, ci un PDF în care CV-ul și
+    certificatele sunt LIPITE la momentul generării — iar `_collect_attachments`
+    îl preferă și îl trimite singur. Fără verificarea asta, un pachet generat
+    înainte de schimbarea CV-ului continuă să trimită CV-ul VECHI, tăcut și
+    la nesfârșit (întâmplat pe 2026-08-08: pachetul din 23 iulie a plecat cu
+    CV-ul vechi, deși configul arăta deja spre cel nou).
+
+    Un pachet inexistent e „învechit" prin definiție; o sursă inexistentă nu
+    poate învechi nimic.
+    """
+    if not package.exists():
+        return True
+    built = package.stat().st_mtime
+    return any(s.exists() and s.stat().st_mtime > built for s in sources)
+
+
 def setup_logger(name: str, log_dir: Path | None = None) -> logging.Logger:
     """Creează logger cu output în fișier + consolă."""
     logger = logging.getLogger(name)

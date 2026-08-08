@@ -101,7 +101,7 @@
     .meta { display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--muted); font-size:14px; margin:0 0 16px; }
     .meta strong { color:var(--fg); font-weight:600; }
     .desc { white-space:pre-wrap; background:var(--surface); border:1px solid var(--border);
-            border-radius:var(--radius); padding:16px; line-height:1.6; }
+            border-radius:var(--radius); padding:16px; line-height:1.6; max-width:72ch; }
     pre.raw { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
               padding:16px; overflow:auto; font-size:13px; color:var(--muted); }
 
@@ -136,13 +136,16 @@
               border:1px solid; }
     .banner.live { background:rgba(239,68,68,.1); color:var(--err); border-color:rgba(239,68,68,.35); }
     .banner.dry { background:rgba(245,158,11,.1); color:var(--warn); border-color:rgba(245,158,11,.35); }
+    /* Link-urile din bannere moștenesc culoarea semantică a bannerului —
+       un link verde-accent într-un banner roșu ar amesteca două semnificații. */
+    .banner a { color:inherit; text-decoration:underline; }
     /* Comutatorul LIVE */
     .live-toggle { display:flex; align-items:center; gap:10px; padding:12px 14px; margin:0 0 14px;
                    background:var(--surface); border:1px solid var(--border-strong);
                    border-radius:var(--radius); cursor:pointer; font-size:14px; }
     .live-toggle input { width:18px; height:18px; accent-color:var(--err); cursor:pointer; }
     /* Textarea mari (preview editabil) */
-    .field textarea.big { min-height:220px; line-height:1.6; resize:vertical; }
+    .field textarea.big { min-height:220px; line-height:1.6; resize:vertical; max-width:72ch; }
     .row-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .row-actions form { margin:0; }
     .btn-small { padding:7px 12px; font-size:13px; }

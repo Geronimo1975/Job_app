@@ -112,11 +112,13 @@ class TestNormalizeJob:
 
 class TestScrapeMarket:
     def test_passes_country_and_remote_from_market(self, tmp_path):
-        """Piață remote: pe Indeed, is_remote exclude hours_old.
+        """Piață remote: pe Indeed, `is_remote` cade în favoarea search_term.
 
-        Testul asertase înainte `hours_old == 72` pe ambele site-uri, ceea ce
-        cimenta bug-ul: upstream ignoră unul din filtre când Indeed le primește
-        împreună, deci filtrul de vechime nu se aplica deși codul îl trimitea.
+        Istoric: testul asertase `hours_old == 72` pe ambele site-uri, ceea ce
+        cimenta bug-ul upstream (Indeed ignoră unul din filtre când le primește
+        împreună). Apoi a asertat `is_remote is True` + `hours_old` renunțat —
+        dar `is_remote` era exact filtrul care anula termenul de căutare, deci
+        acum el cade, iar `hours_old` redevine folosibil.
         """
         scraper = JobSpyScraper(CFG, tmp_path)
         with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
@@ -125,12 +127,14 @@ class TestScrapeMarket:
 
         indeed = _kwargs_for(mock, "indeed")
         assert indeed["country_indeed"] == "ROMANIA"
-        assert indeed["is_remote"] is True
         assert indeed["location"] == "Romania"
-        # Piață remote pe Indeed: is_remote are prioritate, hours_old cade.
-        assert "hours_old" not in indeed
-        # Pe LinkedIn nu există conflict, deci filtrul de vechime rămâne.
-        assert _kwargs_for(mock, "linkedin")["hours_old"] == 72
+        # Remote se filtrează local; upstream primește doar termenul de căutare.
+        assert "is_remote" not in indeed
+        assert indeed["hours_old"] == 72
+        # Pe LinkedIn nu există conflict: ambele filtre rămân.
+        linkedin = _kwargs_for(mock, "linkedin")
+        assert linkedin["hours_old"] == 72
+        assert linkedin["is_remote"] is True
 
     def test_keyword_group_becomes_boolean_query(self, tmp_path):
         scraper = JobSpyScraper(CFG, tmp_path)
@@ -187,15 +191,57 @@ class TestSanitizeIndeed:
     (job_type & is_remote) / easy_apply. Trimise împreună, un filtru cade
     silențios — exact ce făcea codul pentru piața ro_remote."""
 
-    def test_remote_search_drops_hours_old_on_indeed(self, tmp_path):
+    def test_remote_search_drops_is_remote_not_the_search_term(self, tmp_path):
+        """`is_remote` costă termenul de căutare, deci el e cel care cade.
+
+        Verificat live (2026-08-06, UAE): aceeași interogare booleană întoarce
+        cu `is_remote=True` joburi fără nicio legătură („Senior Real Estate
+        Broker" pentru „AI Developer"), iar toate cele 4 grupuri de keywords
+        primesc identic aceleași 50 de rânduri — semnul că Indeed ignoră
+        `search_term`. Fără `is_remote`, aceeași interogare întoarce „AI
+        Engineer / Agentic AI Developer", „AI Automation Engineer".
+        """
         scraper = JobSpyScraper(CFG, tmp_path)
         with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
             mock.return_value = FakeDataFrame([])
             jobs, errors = scraper.scrape_query(_query(remote=True, hours_old=72))
 
-        assert "hours_old" not in _kwargs_for(mock, "indeed")
-        assert _kwargs_for(mock, "indeed")["is_remote"] is True
+        indeed = _kwargs_for(mock, "indeed")
+        assert "is_remote" not in indeed
+        assert indeed["search_term"] == '"Python Developer"'
+        assert any(e.startswith(WARNING_PREFIX) and "is_remote" in e for e in errors)
+
+    def test_dropping_is_remote_gives_hours_old_back(self, tmp_path):
+        """Fără `is_remote` și fără `job_type`, `hours_old` nu mai are conflict."""
+        scraper = JobSpyScraper(CFG, tmp_path)
+        with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
+            mock.return_value = FakeDataFrame([])
+            jobs, errors = scraper.scrape_query(_query(remote=True, hours_old=72))
+
+        assert _kwargs_for(mock, "indeed")["hours_old"] == 72
+        assert not any("hours_old" in e for e in errors)
+
+    def test_job_type_still_drops_hours_old_on_indeed(self, tmp_path):
+        """`job_type` rămâne — el nu anulează search_term, deci hours_old cade."""
+        scraper = JobSpyScraper(CFG, tmp_path)
+        with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
+            mock.return_value = FakeDataFrame([])
+            jobs, errors = scraper.scrape_query(
+                _query(remote=True, job_type="parttime", hours_old=72))
+
+        indeed = _kwargs_for(mock, "indeed")
+        assert indeed["job_type"] == "parttime"
+        assert "hours_old" not in indeed
         assert any(e.startswith(WARNING_PREFIX) and "hours_old" in e for e in errors)
+
+    def test_is_remote_survives_when_there_is_no_search_term(self, tmp_path):
+        """Fără termen de căutare nu există ce să anuleze — filtrul rămâne util."""
+        scraper = JobSpyScraper(CFG, tmp_path)
+        with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
+            mock.return_value = FakeDataFrame([])
+            scraper.scrape_query(_query(remote=True, keyword_groups=[[]]))
+
+        assert _kwargs_for(mock, "indeed")["is_remote"] is True
 
     def test_job_type_also_drops_hours_old_on_indeed(self, tmp_path):
         scraper = JobSpyScraper(CFG, tmp_path)
@@ -223,6 +269,55 @@ class TestSanitizeIndeed:
             scraper.scrape_query(_query(sites=["linkedin"], remote=True, hours_old=72))
 
         assert _kwargs_for(mock, "linkedin")["hours_old"] == 72
+
+    def test_linkedin_keeps_is_remote(self, tmp_path):
+        """Doar Indeed pierde search_term pe is_remote — LinkedIn îl păstrează."""
+        scraper = JobSpyScraper(CFG, tmp_path)
+        with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
+            mock.return_value = FakeDataFrame([])
+            scraper.scrape_query(_query(sites=["linkedin"], remote=True))
+
+        assert _kwargs_for(mock, "linkedin")["is_remote"] is True
+
+
+class TestRemoteFilteredLocally:
+    """Când `is_remote` nu mai ajunge la jobspy (vezi `_sanitize`), filtrul
+    cerut de piață trebuie aplicat pe rândurile întoarse — altfel o căutare
+    remote ar aduce și joburi on-site."""
+
+    ONSITE = {**ROW, "job_url": "https://example.com/job/onsite",
+              "title": "Python Developer", "location": "Dubai", "is_remote": False}
+    REMOTE_FLAG = {**ROW, "job_url": "https://example.com/job/flag",
+                   "title": "Python Developer", "location": "Dubai", "is_remote": True}
+    REMOTE_TITLE = {**ROW, "job_url": "https://example.com/job/title",
+                    "title": "Python Developer (Remote)", "location": "Dubai",
+                    "is_remote": False}
+
+    def _run(self, tmp_path, rows, **over):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        with patch("scrapers.jobspy_scraper.scrape_jobs") as mock:
+            mock.return_value = FakeDataFrame(rows)
+            jobs, _ = scraper.scrape_query(_query(**over))
+        return jobs
+
+    def test_onsite_rows_are_dropped_on_indeed_remote_search(self, tmp_path):
+        jobs = self._run(tmp_path, [self.ONSITE, self.REMOTE_FLAG], remote=True)
+        assert [j["url"] for j in jobs] == ["https://example.com/job/flag"]
+
+    def test_remote_written_in_the_title_counts(self, tmp_path):
+        """Indeed nu setează mereu `is_remote`; „(Remote)" în titlu e neechivoc."""
+        jobs = self._run(tmp_path, [self.REMOTE_TITLE], remote=True)
+        assert len(jobs) == 1
+
+    def test_non_remote_search_keeps_everything(self, tmp_path):
+        jobs = self._run(tmp_path, [self.ONSITE, self.REMOTE_FLAG], remote=False)
+        assert len(jobs) == 2
+
+    def test_no_local_filter_when_is_remote_reached_jobspy(self, tmp_path):
+        """Pe LinkedIn filtrul l-a aplicat deja upstream — a doua filtrare pe
+        un câmp pe care LinkedIn nu-l completează ar goli rezultatele."""
+        jobs = self._run(tmp_path, [self.ONSITE], sites=["linkedin"], remote=True)
+        assert len(jobs) == 1
 
 
 class TestOptionalParamsAreOmitted:
@@ -311,6 +406,69 @@ class TestNormalizeEnrichment:
     def test_missing_emails_leaves_field_empty(self, tmp_path):
         scraper = JobSpyScraper(CFG, tmp_path)
         assert scraper._normalize_job(ROW, _q("de"))["email_hr"] == ""
+
+
+class TestEmailIsAnApplicationAddress:
+    """Anunțurile conțin adrese care NU primesc candidaturi: clauze legale
+    („reasonable accommodations", „pay transparency"), presă, protecția
+    datelor. Măsurat live 2026-08-06: pe UAE/RO/CH, majoritatea adreselor
+    extrase erau exact astea — o candidatură trimisă acolo e mai rea decât
+    lipsa adresei, fiindcă arată ca spam."""
+
+    def _mail(self, tmp_path, emails):
+        scraper = JobSpyScraper(CFG, tmp_path)
+        return scraper._normalize_job({**ROW, "emails": emails}, _q("de"))["email_hr"]
+
+    def test_boilerplate_address_is_never_used(self, tmp_path):
+        assert self._mail(tmp_path, "reasonable.accommodations@genesys.com") == ""
+
+    def test_privacy_address_is_never_used(self, tmp_path):
+        assert self._mail(tmp_path, "privacy@appdirect.com") == ""
+
+    def test_pay_transparency_address_is_never_used(self, tmp_path):
+        assert self._mail(tmp_path, "paytransparency@clickhouse.com") == ""
+
+    def test_real_address_wins_over_boilerplate_even_if_it_comes_later(self, tmp_path):
+        emails = "reasonable.accommodations@genesys.com, recruiting@genesys.com"
+        assert self._mail(tmp_path, emails) == "recruiting@genesys.com"
+
+    def test_application_address_beats_a_neutral_one_that_comes_first(self, tmp_path):
+        """`info@` e plauzibilă, dar `bewerbung@` e adresa care chiar primește
+        candidaturi — ordinea din text nu trebuie să decidă."""
+        assert self._mail(tmp_path, "info@testco.de, bewerbung@testco.de") \
+            == "bewerbung@testco.de"
+
+    def test_talent_acquisition_counts_as_application_address(self, tmp_path):
+        assert self._mail(tmp_path, "info@x.com, talent.acquisition@servicenow.com") \
+            == "talent.acquisition@servicenow.com"
+
+    def test_neutral_address_is_still_used_when_nothing_better_exists(self, tmp_path):
+        assert self._mail(tmp_path, "amelie@ecoza.de") == "amelie@ecoza.de"
+
+    def test_hr_matches_only_as_a_whole_token(self, tmp_path):
+        """`hr` e prea scurt pentru potrivire pe subșir: „chris@" îl conține."""
+        assert self._mail(tmp_path, "chris@testco.de") == "chris@testco.de"
+
+    def test_truncated_address_is_rejected(self, tmp_path):
+        """Local part care începe cu punctuație = adresă tăiată de parser.
+
+        Observate live 2026-08-06: `_Acquisition@eon.com` (din
+        „Talent_Acquisition@") și `_mb@oracle.com`. Sintactic sunt valide, dar
+        ambele ar da bounce — iar un bounce e exact eroarea pe care
+        `require_email` trebuie s-o prevină.
+        """
+        assert self._mail(tmp_path, "_Acquisition@eon.com") == ""
+        assert self._mail(tmp_path, ".mb@oracle.com") == ""
+
+    def test_truncated_address_does_not_hide_a_good_one(self, tmp_path):
+        assert self._mail(tmp_path, "_Acquisition@eon.com, karriere@eon.com") \
+            == "karriere@eon.com"
+
+    def test_dei_address_is_not_an_application_address(self, tmp_path):
+        """`inclusion@`/`diversity@` sunt aceeași categorie ca
+        `reasonable.accommodations@`: text standard, nu destinatar."""
+        assert self._mail(tmp_path, "inclusion@kraken.tech") == ""
+        assert self._mail(tmp_path, "diversity@x.com") == ""
 
     def test_nan_never_becomes_the_string_nan(self, tmp_path):
         """NaN din pandas e truthy, deci `str(x or "")` dădea literal "nan"."""

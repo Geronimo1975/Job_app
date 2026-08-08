@@ -2,6 +2,7 @@
 import io
 import os
 from contextlib import redirect_stderr
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase
@@ -293,6 +294,79 @@ class SheetBridgeTests(TestCase):
         self.assertFalse(res["ok"])
         self.assertIn("URL", res["error"])
 
+    def test_job_to_internal_emits_drive_link_as_cover_letter(self):
+        from jobs import sheet_bridge
+        job = self._job(anschreiben_drive_link="https://drive.google.com/file/d/X/view")
+        internal = sheet_bridge.job_to_internal(job)
+        self.assertEqual(internal["cover_letter"], "https://drive.google.com/file/d/X/view")
+        # fără link, cheia se omite — upsert-ul n8n golește celula la ""
+        self.assertNotIn("cover_letter", sheet_bridge.job_to_internal(self._job(url="https://a.co/2")))
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.Path")
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_uploads_pdf_and_ingests_link(self, _cfg, mock_client_cls, mock_path):
+        from jobs import sheet_bridge
+        mock_path.return_value.exists.return_value = True
+        client = mock_client_cls.return_value
+        client.upload_doc.return_value = {"ok": True, "link": "https://drive.google.com/file/d/Y/view"}
+        client.ingest.return_value = {"ok": True}
+        job = self._job(anschreiben_pdf_path="/tmp/x.pdf")
+        res = sheet_bridge.push_to_sheet(job)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["link"], "https://drive.google.com/file/d/Y/view")
+        job.refresh_from_db()
+        self.assertEqual(job.anschreiben_drive_link, "https://drive.google.com/file/d/Y/view")
+        # linkul intră în ACELAȘI upsert (cheia cover_letter → col O)
+        sent = client.ingest.call_args[0][0]
+        self.assertEqual(sent[0]["cover_letter"], "https://drive.google.com/file/d/Y/view")
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_with_existing_link_skips_reupload(self, _cfg, mock_client_cls):
+        from jobs import sheet_bridge
+        client = mock_client_cls.return_value
+        client.ingest.return_value = {"ok": True}
+        job = self._job(anschreiben_pdf_path="/tmp/x.pdf",
+                        anschreiben_drive_link="https://drive.google.com/file/d/Z/view")
+        res = sheet_bridge.push_to_sheet(job)
+        self.assertTrue(res["ok"])
+        client.upload_doc.assert_not_called()
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.Path")
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_upload_failure_is_warning_not_fatal(self, _cfg, mock_client_cls, mock_path):
+        from jobs import sheet_bridge
+        mock_path.return_value.exists.return_value = True
+        client = mock_client_cls.return_value
+        client.upload_doc.side_effect = RuntimeError("n8n 5xx")
+        client.ingest.return_value = {"ok": True}
+        job = self._job(anschreiben_pdf_path="/tmp/x.pdf")
+        res = sheet_bridge.push_to_sheet(job)
+        self.assertTrue(res["ok"])                    # metadatele au ajuns
+        self.assertIn("upload-ul PDF a eșuat", res["warning"])
+        client.ingest.assert_called_once()
+
+    @patch.dict(os.environ, {"N8N_WEBHOOK_SECRET": "s3cret"})
+    @patch("jobs.sheet_bridge.N8nClient")
+    @patch("jobs.sheet_bridge.load_pipeline_config",
+           return_value={"n8n": {"enabled": True, "secret_env": "N8N_WEBHOOK_SECRET"}})
+    def test_push_without_pdf_skips_upload_silently(self, _cfg, mock_client_cls):
+        from jobs import sheet_bridge
+        client = mock_client_cls.return_value
+        client.ingest.return_value = {"ok": True}
+        res = sheet_bridge.push_to_sheet(self._job())  # fără pachet generat
+        self.assertTrue(res["ok"])
+        self.assertNotIn("warning", res)
+        client.upload_doc.assert_not_called()
+
     def test_gefunden_am_uses_berlin_date(self):
         # 23:30 UTC = 01:30 Berlin a doua zi (vară) — data trebuie să fie cea locală
         import datetime
@@ -430,8 +504,12 @@ class GenerationBridgeTests(TestCase):
         mock_smtp.return_value.send.return_value = True
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             f.write(b"%PDF")
+        # `anschreiben_pdf_path` e setat pentru că lista de atașamente se
+        # recalculează la trimitere (vezi `send_package`): un job fără scrisoare
+        # e blocat intenționat, deci fixture-ul trebuie să aibă una.
         res = generation_bridge.send_package(
-            self._job(email_subject="S", email_body="B", attachments_json=[f.name]), live=True)
+            self._job(email_subject="S", email_body="B", attachments_json=[f.name],
+                      anschreiben_pdf_path=f.name), live=True)
         self.assertTrue(res["ok"])
         self.assertTrue(res["live"])
         self.assertFalse(mock_smtp.return_value.send.call_args.kwargs["dry_run"])
@@ -504,7 +582,8 @@ class GenerationBridgeTests(TestCase):
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             f.write(b"%PDF")
         res = generation_bridge.send_package(
-            self._job(email_subject="S", email_body="B", attachments_json=[f.name]),
+            self._job(email_subject="S", email_body="B", attachments_json=[f.name],
+                      anschreiben_pdf_path=f.name),   # altfel garda blochează înainte de SMTP
             live=True)
         self.assertFalse(res["ok"])
         self.assertIn("refuzat", res["error"])
@@ -834,13 +913,13 @@ class SearchBridgeQueryTests(TestCase):
         from jobs import search_bridge
         keys = [p["key"] for p in search_bridge.presets()]
         self.assertIn("de", keys)
-        self.assertIn("ro_remote", keys)
+        self.assertIn("ro", keys)
 
     def test_preset_exposes_keywords_one_group_per_line(self):
         from jobs import search_bridge
         de = next(p for p in search_bridge.presets() if p["key"] == "de")
         self.assertIn("\n", de["keywords"])
-        self.assertIn("Python Developer", de["keywords"])
+        self.assertIn("AI Developer", de["keywords"])
 
     def test_query_from_params_parses_keyword_groups(self):
         from jobs import search_bridge
@@ -1432,7 +1511,7 @@ class SearchTemplateTests(TestCase):
     def test_search_page_lists_presets(self):
         resp = self.client.get(reverse("search_index"))
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "ro_remote")
+        self.assertContains(resp, "ro")
 
     def test_search_page_has_the_nav_link_marked_active(self):
         # Legat de link-ul „Căutare" în sine (href + text), nu doar de prezența
@@ -1463,11 +1542,11 @@ class SearchTemplateTests(TestCase):
         # formular (`name="location" value="..."`), care reflectă ce a
         # semănat efectiv `SearchForm(initial=...)`.
         from jobs import search_bridge
-        ro = next(p for p in search_bridge.presets() if p["key"] == "ro_remote")
-        resp = self.client.get(reverse("search_index"), {"preset": "ro_remote"})
+        ro = next(p for p in search_bridge.presets() if p["key"] == "ro")
+        resp = self.client.get(reverse("search_index"), {"preset": "ro"})
         self.assertContains(
             resp, 'name="location" value="%s"' % ro["location"])
-        self.assertContains(resp, 'value="ro_remote" selected')
+        self.assertContains(resp, 'value="ro" selected')
 
     def test_get_with_unknown_preset_falls_back_to_default_without_crashing(self):
         from jobs import search_bridge
@@ -1584,3 +1663,86 @@ class SearchTemplateTests(TestCase):
         resp = self.client.get(reverse("search_run", args=[run.pk]))
         self.assertContains(resp, "am renunțat la hours_old")
         self.assertContains(resp, "Erori pe surse (1)")
+
+
+class StaleAttachmentsTests(TestCase):
+    """Regresie 2026-08-08: pachetul a plecat cu CV-ul VECHI.
+
+    „Bewerbung Komplett" are CV-ul lipit înăuntru, iar `attachments_json` e
+    înghețat la generare — deci un CV nou nu ajungea niciodată în email pentru
+    joburile deja generate.
+    """
+
+    def _job(self, tmp, **over):
+        data = dict(url="https://x.de/1", company="ACME", title="AI Engineer",
+                    email_hr="hr@x.de", language="en", send_state="generated",
+                    email_subject="S", email_body="B")
+        data.update(over)
+        return Job.objects.create(**data)
+
+    def _pdf(self, path, when):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"%PDF-1.4\n")
+        os.utime(path, (when, when))
+        return str(path)
+
+    def test_stale_komplett_is_replaced_by_anschreiben_plus_current_cv(self):
+        import tempfile
+        from jobs import generation_bridge as gb
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            komplett = self._pdf(td / "Bewerbung_Komplett.pdf", 1000)   # vechi
+            anschreiben = self._pdf(td / "Anschreiben.pdf", 1000)
+            cv = self._pdf(td / "cv_nou.pdf", 5000)                     # CV mai NOU
+            cfg = {"documents": {"cv_file": str(cv), "cv_files": {"en": str(cv)}}}
+            with patch.object(gb, "_docs_paths", return_value=(Path(cv), [])):
+                out = gb._collect_attachments(komplett, anschreiben, cfg, "en")
+        self.assertNotIn(komplett, out)          # pachetul învechit NU se trimite
+        self.assertIn(anschreiben, out)
+        self.assertIn(cv, out)
+
+    def test_fresh_komplett_is_still_preferred_alone(self):
+        import tempfile
+        from jobs import generation_bridge as gb
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            cv = self._pdf(td / "cv.pdf", 1000)
+            komplett = self._pdf(td / "Bewerbung_Komplett.pdf", 5000)   # mai nou
+            anschreiben = self._pdf(td / "Anschreiben.pdf", 1000)
+            cfg = {"documents": {"cv_file": str(cv)}}
+            with patch.object(gb, "_docs_paths", return_value=(Path(cv), [])):
+                out = gb._collect_attachments(komplett, anschreiben, cfg, "en")
+        self.assertEqual(out, [komplett])
+
+    def test_send_recomputes_the_frozen_attachment_list(self):
+        """Chiar dacă `attachments_json` ține pachetul vechi, trimiterea nu-l
+        mai folosește — și lista salvată se corectează."""
+        import tempfile
+        from jobs import generation_bridge as gb
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            komplett = self._pdf(td / "Bewerbung_Komplett.pdf", 1000)
+            anschreiben = self._pdf(td / "Anschreiben.pdf", 1000)
+            cv = self._pdf(td / "cv_nou.pdf", 5000)
+            job = self._job(td, bewerbung_pdf_path=komplett,
+                            anschreiben_pdf_path=anschreiben,
+                            attachments_json=[komplett])   # lista înghețată
+            sent = {}
+
+            class _Smtp:
+                def __init__(self, *a, **k): pass
+                def build_email(self, **kw):
+                    sent["attachments"] = [Path(p).name for p in kw["attachments"]]
+                    return object()
+                def send(self, msg, provider=None, dry_run=True): return True
+
+            with patch.object(gb, "_docs_paths", return_value=(Path(cv), [])), \
+                 patch.object(gb, "load_pipeline_config", return_value={"documents": {}}), \
+                 patch.object(gb, "SmtpSender", _Smtp):
+                res = gb.send_package(job, live=False)
+
+        self.assertTrue(res["ok"])
+        self.assertNotIn("Bewerbung_Komplett.pdf", sent["attachments"])
+        self.assertIn("cv_nou.pdf", sent["attachments"])
+        job.refresh_from_db()
+        self.assertNotIn(komplett, job.attachments_json)

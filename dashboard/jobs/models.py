@@ -31,6 +31,9 @@ class Job(models.Model):
     email_body = models.TextField(blank=True)
     anschreiben_text = models.TextField(blank=True)
     anschreiben_pdf_path = models.CharField(max_length=500, blank=True)
+    # Linkul Drive al Anschreiben-ului (JobApp Upload); intră în col O
+    # „Anschreiben PDF" prin ingest — n8n cloud nu poate atașa fișiere locale.
+    anschreiben_drive_link = models.URLField(max_length=500, blank=True)
     bewerbung_pdf_path = models.CharField(max_length=500, blank=True)
     attachments_json = models.JSONField(default=list, blank=True)
     generated_at = models.DateTimeField(null=True, blank=True)

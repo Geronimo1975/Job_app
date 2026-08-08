@@ -2,8 +2,9 @@
 {% block title %}Preview — {{ job.title|default:"Job" }}{% endblock %}
 {% block content %}
   <p><a href="{% url 'index' %}">← Înapoi la Joburi</a></p>
-  <h1>Preview: {{ job.title|default:"(fără titlu)" }} @ {{ job.company|default:"—" }}</h1>
+  <h1>{{ job.title|default:"(fără titlu)" }}</h1>
   <p class="sub">
+    Preview pachet · {{ job.company|default:"—" }} ·
     <span class="pill {{ job.send_state }}">{{ job.send_state }}</span>
     {% if job.generated_at %} · generat {{ job.generated_at|date:"d.m.Y H:i" }}{% endif %}
     {% if job.sent_at %} · trimis {{ job.sent_at|date:"d.m.Y H:i" }}{% endif %}
@@ -21,7 +22,8 @@
     {% csrf_token %}
     <div class="field" style="margin-bottom:14px;">
       <label for="id_email_to">Către</label>
-      <input type="text" id="id_email_to" value="{{ job.email_hr|default:'(lipsește)' }}" readonly
+      <input type="text" id="id_email_to" value="{{ job.email_hr|default:'' }}" readonly
+             placeholder="(lipsește — completează în Detalii job)"
              class="mono" aria-readonly="true" style="opacity:.8;">
     </div>
     <div class="field" style="margin-bottom:14px;">

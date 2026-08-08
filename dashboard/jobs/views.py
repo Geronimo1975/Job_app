@@ -83,8 +83,11 @@ def push_job(request, pk):
         return redirect("job_detail", pk=pk)
     job = get_object_or_404(Job, pk=pk)
     res = push_to_sheet(job)
-    if res["ok"]:
-        messages.success(request, "Rând salvat în Sheet (upsert pe Apply URL).")
+    if res["ok"] and res.get("warning"):
+        messages.warning(request, res["warning"])
+    elif res["ok"]:
+        extra = " Anschreiben PDF e în Drive (col O)." if res.get("link") else ""
+        messages.success(request, f"Rând salvat în Sheet (upsert pe Apply URL).{extra}")
     else:
         messages.error(request, f"Salvare în Sheet eșuată: {res['error']}")
     return redirect("job_detail", pk=pk)
