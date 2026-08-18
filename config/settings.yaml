@@ -110,14 +110,19 @@ scraping:
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
-    nl:
-      country: "netherlands"
-      language: "en"                   # userul nu vorbește neerlandeză
-      locations: ["Netherlands"]
-      remote: false
-      keyword_groups: *skills_groups
-      sources: ["jobspy"]
-      best_effort_sources: ["linkedin"]
+    # ── nl: DEZACTIVATĂ 2026-08-18 ──────────────────────────────
+    # Piața dădea a doua cea mai bună rată de email (10%), dar candidaturile
+    # erau respinse pentru necunoașterea neerlandezei — anunțurile NL cer
+    # limba chiar și când sunt scrise în engleză. Blocul e păstrat comentat,
+    # nu șters: dacă se reia, se decomentează ca atare.
+    # nl:
+    #   country: "netherlands"
+    #   language: "en"
+    #   locations: ["Netherlands"]
+    #   remote: false
+    #   keyword_groups: *skills_groups
+    #   sources: ["jobspy"]
+    #   best_effort_sources: ["linkedin"]
 
     se:
       country: "sweden"
