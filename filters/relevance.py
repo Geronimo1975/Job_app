@@ -188,6 +188,52 @@ def requires_email(job: dict, config: dict) -> bool:
     return bool((scraping.get("filters", {}) or {}).get("require_email", False))
 
 
+# Cuvinte întregi: `\bremote\b` (deci NU „remotely"), ca în `_is_remote_row`
+# din jobspy_scraper. Formulările românești sunt necesare fiindcă eJobs scrie
+# anunțurile în română.
+_REMOTE_RE = re.compile(
+    r"\b(remote|telemunc[ăa]|la distan[țt][ăa]|work from home)\b", re.I
+)
+# Hibridul NU e remote. Veto-ul se uită DOAR la titlu+locație: acolo „hibrid"
+# e o clasificare a postului, pe când în descriere e proză („colegii din alte
+# echipe lucrează hibrid") și ar respinge anunțuri remote adevărate.
+_HYBRID_RE = re.compile(r"\b(hibrid|hybrid)\b", re.I)
+
+
+def is_remote_job(job: dict) -> bool:
+    """True dacă jobul canonic descrie o poziție remote.
+
+    Diferă intenționat de `_is_remote_row` (jobspy_scraper), care lucrează pe
+    rândul BRUT și se oprește la titlu+locație: aici jobul e deja normalizat și
+    ARE descriere — necesar fiindcă eJobs pune „Romania" în locație la toate
+    anunțurile, deci corpul e singurul semnal rămas.
+    """
+    flag = (job.get("raw") or {}).get("is_remote")
+    if flag is True or str(flag).strip().lower() == "true":
+        return True
+    label = f"{job.get('title') or ''} {job.get('location') or ''}"
+    if _HYBRID_RE.search(label):
+        return False
+    return _REMOTE_RE.search(f"{label} {job.get('description') or ''}") is not None
+
+
+def requires_remote(job: dict, config: dict) -> bool:
+    """True dacă jobul trebuie să fie remote ca să fie reținut.
+
+    Opt-in și SEPARAT de `market.remote`, care spune ce CEREM sursei (ajunge
+    `is_remote` la jobspy) — nu ce PĂSTRĂM. Confundându-le, piața
+    `remote_global` s-ar goli: LinkedIn filtrează deja upstream și nu
+    completează câmpul, deci a doua filtrare ar tăia exact rândurile bune
+    (vezi JOB-48). Ca la `require_email`, regula e per piață cu fallback
+    global, fiindcă „doar remote" are sens pe unele piețe și golește altele.
+    """
+    scraping = config.get("scraping", {}) or {}
+    market_cfg = (scraping.get("markets", {}) or {}).get(job.get("market")) or {}
+    if "require_remote" in market_cfg:
+        return bool(market_cfg["require_remote"])
+    return bool((scraping.get("filters", {}) or {}).get("require_remote", False))
+
+
 def passes_prefilter(job: dict, config: dict) -> bool:
     """True dacă jobul merită cheltuiala de analiză AI."""
     score, _ = prescore(job, config)

@@ -4,8 +4,10 @@ Teste pentru prefiltrul determinist — funcții pure, fără rețea și fără 
 
 from filters.relevance import (
     HARD_REJECT,
+    is_remote_job,
     passes_prefilter,
     requires_email,
+    requires_remote,
     prescore,
     skill_tokens,
 )
@@ -411,3 +413,104 @@ class TestRequiresEmailPerMarket:
 
     def test_default_is_permissive_when_nothing_is_configured(self):
         assert requires_email({"market": "de"}, {}) is False
+
+
+class TestIsRemoteJob:
+    """Semnalul de remote al unui job canonic.
+
+    `_is_remote_row` din jobspy_scraper lucrează pe rândul BRUT (fără
+    descriere) și se oprește la titlu+locație. Aici jobul e deja normalizat și
+    are descriere — necesar fiindcă eJobs pune „Romania" în locație la toate
+    anunțurile, deci singurul semnal rămâne corpul anunțului.
+    """
+
+    def test_jobspy_flag_marks_remote(self):
+        assert is_remote_job({"raw": {"is_remote": True}}) is True
+
+    def test_jobspy_flag_as_string_marks_remote(self):
+        """jobspy trece prin pandas: flagul ajunge și ca text, ca în `_is_remote_row`."""
+        assert is_remote_job({"raw": {"is_remote": "True"}}) is True
+
+    def test_missing_raw_is_not_remote(self):
+        assert is_remote_job({"raw": None, "title": "Java Engineer"}) is False
+
+    def test_remote_in_location_marks_remote(self):
+        assert is_remote_job({"location": "Remote (de acasă)"}) is True
+
+    def test_remote_in_title_marks_remote(self):
+        assert is_remote_job({"title": "Growth Marketer | Remote"}) is True
+
+    def test_remote_only_in_description_marks_remote(self):
+        assert is_remote_job(
+            {"location": "Romania", "description": "This is a fully remote role."}
+        ) is True
+
+    def test_romanian_wording_counts(self):
+        assert is_remote_job({"description": "Program de telemuncă"}) is True
+        assert is_remote_job({"description": "Se lucrează la distanță"}) is True
+
+    def test_onsite_job_is_not_remote(self):
+        assert is_remote_job(
+            {"title": "Java Engineer", "location": "București",
+             "description": "Lucru la birou, program fix."}
+        ) is False
+
+    def test_remote_as_substring_does_not_count(self):
+        """`\\bremote\\b`, ca în `_is_remote_row` — „Remotely Piloted" nu e job remote."""
+        assert is_remote_job({"title": "Remotely Piloted Systems Technician"}) is False
+
+    def test_hybrid_in_location_vetoes_remote(self):
+        """Hibridul NU e remote. Veto-ul se uită doar la câmpurile structurate:
+        acolo „hibrid" e o clasificare, pe când în descriere e proză și ar
+        respinge anunțuri remote care doar pomenesc alternativa hibridă."""
+        assert is_remote_job(
+            {"location": "București (hibrid)", "description": "2 zile remote pe săptămână"}
+        ) is False
+
+    def test_hybrid_mentioned_only_in_description_does_not_veto(self):
+        assert is_remote_job(
+            {"location": "Remote", "description": "Colegii din alte echipe lucrează hibrid."}
+        ) is True
+
+
+class TestRequiresRemote:
+    """`require_remote` e opt-in și SEPARAT de `market.remote`.
+
+    `market.remote` spune ce CEREM sursei (ajunge `is_remote` la jobspy);
+    `require_remote` spune ce PĂSTRĂM. Confundându-le, piața `remote_global`
+    s-ar goli: LinkedIn filtrează deja upstream și nu completează câmpul, deci
+    o a doua filtrare ar tăia exact rândurile bune (vezi JOB-48).
+    """
+
+    CFG = {
+        "scraping": {
+            "filters": {"require_remote": True},
+            "markets": {
+                "ro": {"country": "romania", "language": "en"},
+                "de": {"country": "germany", "language": "de", "require_remote": False},
+            },
+        }
+    }
+
+    def test_market_without_override_follows_the_global_rule(self):
+        assert requires_remote({"market": "ro"}, self.CFG) is True
+
+    def test_market_override_wins(self):
+        assert requires_remote({"market": "de"}, self.CFG) is False
+
+    def test_unknown_market_follows_the_global_rule(self):
+        assert requires_remote({"market": "necunoscuta"}, self.CFG) is True
+        assert requires_remote({}, self.CFG) is True
+
+    def test_market_can_be_stricter_than_the_global_rule(self):
+        cfg = {"scraping": {"filters": {"require_remote": False},
+                            "markets": {"ro": {"require_remote": True}}}}
+        assert requires_remote({"market": "ro"}, cfg) is True
+
+    def test_default_is_permissive_when_nothing_is_configured(self):
+        assert requires_remote({"market": "ro"}, {}) is False
+
+    def test_scraping_remote_flag_is_not_the_gate(self):
+        """`remote: true` pe piață NU trebuie să activeze poarta singur."""
+        cfg = {"scraping": {"markets": {"ro": {"remote": True}}}}
+        assert requires_remote({"market": "ro"}, cfg) is False

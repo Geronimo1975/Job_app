@@ -144,11 +144,22 @@ scraping:
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
+    # ⚠ Piața RO cere ADRESĂ, nu remote (decizia userului, 2026-08-22).
+    # Cele două condiții se exclud practic aici: măsurat pe 114 anunțuri,
+    # cele 3 remote n-au adresă, iar cele 4 cu adresă sunt hibrid/on-site.
+    # Cerându-le pe amândouă, piața dădea 0 rânduri — s-a ales adresa,
+    # fiindcă doar ea face rândul trimisibil automat.
+    # De aceea `remote: false`: filtrul remote ar tăia exact anunțurile locale
+    # care scriu „Trimite CV la …", adică singura sursă de adrese (același
+    # raționament ca la piața `de`). `require_remote: false` e explicit, nu
+    # implicit, ca să se vadă că a fost o alegere, nu o omisiune.
     ro:
       country: "romania"
       language: "en"
       locations: ["Romania"]
       remote: false
+      require_remote: false
+      require_email: true
       keyword_groups: *skills_groups
       # eJobs: singura sursă RO cu descrieri complete; ~106 anunțuri/rulare.
       sources: ["jobspy", "ro_boards"]
@@ -221,7 +232,14 @@ scraping:
     # Era 30 („titlu perfect + bonus keyword = ~35", JOB-47). Cu emailul scos
     # din rolul de filtru, ăsta a rămas SINGURUL prag, deci trebuie să fie și
     # singurul care decide relevanța.
-    min_prescore: 10
+    # 10 → 8 (2026-08-22): pragul, nu emailul, era ce bloca piața RO. Anunțul
+    # FRESCOVERDE („asistenți AI personalizați, chatboți, fluxuri automate,
+    # Claude") are adresă de candidatură și e fix profilul căutat, dar scorează
+    # 8 — titlul „SPECIALIST AI MARKETING & DIGITAL" nu conține niciun skill la
+    # literă, iar potrivirea din descriere valorează 8, nu 20. Reparația de
+    # fond ar fi rebalansarea titlu/descriere din `prescore()`; ăsta e pragul
+    # coborât până atunci. ⚠ E parametru GLOBAL: atinge toate cele 9 piețe.
+    min_prescore: 8
     # Emailul NU mai e filtru — ar goli exact ce se caută. Joburile remote/
     # nomad se aplică prin portal, deci n-au adresă (LinkedIn: 0%), pe când
     # adresele vin din anunțurile locale („Bewerbung an …"): DE 17%, AT 13%,
@@ -233,12 +251,17 @@ scraping:
     # joburile fără adresă. Adresele `privacy@`/`reasonable.accommodations@` nu
     # contează ca adresă nici așa (vezi `_email_rank`).
     require_email: false
+    # „Doar remote" ca POARTĂ (ce păstrăm), distinct de `markets.<piață>.remote`
+    # (ce cerem sursei). Rămâne `false` global și se activează per piață: pus
+    # aici pe `true` ar goli `remote_global`, unde LinkedIn filtrează deja
+    # upstream și nu completează câmpul, deci a doua filtrare taie tot (JOB-48).
+    require_remote: false
 
 # ── AI / LLM ───────────────────────────────────────────────
 ai:
   # Provider: "anthropic" sau "openai"
   provider: "anthropic"
-  model: "claude-sonnet-4-6"
+  model: "claude-opus-4-8"
   # Temperatura pentru generare cover letter
   temperature: 0.7
   # Limba preferată pentru Anschreiben

@@ -116,6 +116,20 @@ def _find_typed(node, wanted: str):
     return None
 
 
+def _first_node(value) -> dict:
+    """Primul nod dintr-un câmp JSON-LD care poate fi dict SAU listă.
+
+    Schema.org permite ambele forme pentru `hiringOrganization`/`jobLocation`/
+    `address`, iar eJobs chiar folosește lista (verificat live 2026-08-22).
+    Fără normalizarea asta, `.get()` pe listă ridica AttributeError — prins de
+    `except Exception` din `_enrich_from_detail`, deci un anunț îmbogățit cu
+    succes se raporta `unavailable` și pierdea locația și data.
+    """
+    if isinstance(value, list):
+        value = value[0] if value else None
+    return value if isinstance(value, dict) else {}
+
+
 def _plain_text(html_fragment: str) -> str:
     """Descrierea din JSON-LD vine cu tag-uri HTML înăuntru."""
     return " ".join(_TAG_RE.sub(" ", html_fragment or "").split())
@@ -352,12 +366,12 @@ class RoBoardsScraper:
                     job["email_hr"] = _first_email(", ".join(_EMAIL_RE.findall(description)))
 
             if not job.get("company"):
-                organization = posting.get("hiringOrganization") or {}
+                organization = _first_node(posting.get("hiringOrganization"))
                 job["company"] = str(organization.get("name") or "").strip()
 
             # „Romania" e valoarea implicită pusă de parser, nu una aflată.
             if not job.get("location") or job["location"] == "Romania":
-                address = ((posting.get("jobLocation") or {}).get("address") or {})
+                address = _first_node(_first_node(posting.get("jobLocation")).get("address"))
                 locality = str(address.get("addressLocality") or "").strip()
                 if locality:
                     job["location"] = locality

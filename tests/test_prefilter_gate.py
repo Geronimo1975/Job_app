@@ -214,3 +214,95 @@ class TestRequireEmailPerMarket:
         kept, stats = apply_prefilter_gate(batch, self.CFG_MIXT, seen)
         assert [j["market"] for j in kept] == ["ro_remote"]
         assert stats["fara_email"] == 1
+
+
+class TestRequireRemote:
+    """`require_remote: true` — jobul care nu e remote nu are ce căuta în Sheet.
+
+    Poarta e singurul loc care poate impune asta pe TOATE sursele:
+    `market.remote` ajunge doar la jobspy, iar `ro_boards` (eJobs) nici măcar
+    nu se uită la el, deci fără poartă un anunț on-site din eJobs ar intra în
+    Sheet chiar cu `remote: true` în config.
+    """
+
+    CFG_REMOTE = {
+        "skills": CFG["skills"],
+        "scraping": {"filters": {**CFG["scraping"]["filters"], "require_remote": True}},
+    }
+
+    def test_non_remote_job_is_dropped(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer"),
+               "location": "București", "description": "Lucru la birou."}
+        kept, stats = apply_prefilter_gate([job], self.CFG_REMOTE, seen)
+        assert kept == []
+        assert stats["nu_e_remote"] == 1
+        assert stats["respinse"] == 0        # respins pentru remote, nu pentru scor
+
+    def test_remote_job_is_kept(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer"),
+               "location": "Remote (de acasă)"}
+        kept, stats = apply_prefilter_gate([job], self.CFG_REMOTE, seen)
+        assert len(kept) == 1
+        assert stats["nu_e_remote"] == 0
+
+    def test_remote_is_not_required_by_default(self, tmp_path):
+        """Fără flag, o config existentă nu are voie să-și golească poarta."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer"),
+               "location": "București"}
+        kept, stats = apply_prefilter_gate([job], CFG, seen)
+        assert len(kept) == 1
+        assert stats["nu_e_remote"] == 0
+
+    def test_irrelevant_job_is_counted_as_rejected_not_as_non_remote(self, tmp_path):
+        """Scorul rămâne primul: statistica trebuie să spună de ce a căzut."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        kept, stats = apply_prefilter_gate(
+            [_job("https://a.com/1", "Truck Driver")], self.CFG_REMOTE, seen
+        )
+        assert kept == []
+        assert stats["respinse"] == 1
+        assert stats["nu_e_remote"] == 0
+
+    def test_non_remote_job_is_remembered(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer"),
+               "location": "București"}
+        apply_prefilter_gate([job], self.CFG_REMOTE, seen)
+        assert seen.entries["https://a.com/1"]["decision"] == RESPINS_PREFILTRU
+
+    def test_remote_is_checked_before_email(self, tmp_path):
+        """Un job nici remote nici cu email se numără o singură dată, la cauza
+        cea mai de fond — altfel cele două contoare ar spune povești diferite."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        cfg = {"skills": CFG["skills"],
+               "scraping": {"filters": {**CFG["scraping"]["filters"],
+                                        "require_remote": True, "require_email": True}}}
+        job = {**_job("https://a.com/1", "Python Django Developer"),
+               "location": "București"}
+        kept, stats = apply_prefilter_gate([job], cfg, seen)
+        assert kept == []
+        assert stats["nu_e_remote"] == 1
+        assert stats["fara_email"] == 0
+
+    def test_all_three_conditions_together(self, tmp_path):
+        """România + remote + email — exact combinația cerută."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        cfg = {"skills": CFG["skills"],
+               "scraping": {"filters": {**CFG["scraping"]["filters"]},
+                            "markets": {"ro": {"require_remote": True,
+                                               "require_email": True}}}}
+        batch = [
+            {**_job("https://a.com/1", "Python Django Developer"), "company": "A",
+             "market": "ro", "location": "Remote", "email_hr": "hr@a.ro"},
+            {**_job("https://a.com/2", "Python Django Developer"), "company": "B",
+             "market": "ro", "location": "Remote"},
+            {**_job("https://a.com/3", "Python Django Developer"), "company": "C",
+             "market": "ro", "location": "București", "email_hr": "hr@c.ro"},
+        ]
+        kept, stats = apply_prefilter_gate(batch, cfg, seen)
+        assert [j["url"] for j in kept] == ["https://a.com/1"]
+        assert stats["nu_e_remote"] == 1
+        assert stats["fara_email"] == 1

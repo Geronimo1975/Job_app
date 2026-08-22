@@ -301,6 +301,56 @@ class TestDetailEnrichment:
             _scraper(tmp_path)._enrich_from_detail(job)
         assert job["description"] == ""
 
+    def test_job_location_as_list_is_handled(self, tmp_path):
+        """eJobs livrează `jobLocation` ca LISTĂ, nu ca dict (verificat live
+        2026-08-22 pe /devops-engineer/1977087). Fixture-ul folosea dict, deci
+        testele treceau în timp ce producția crăpa: `.get("address")` pe listă
+        dă AttributeError, înghițit de `except Exception`. Anunțul se raporta
+        `unavailable` DEȘI descrierea se scrisese deja, iar locația și data se
+        pierdeau — restul funcției nu mai rula."""
+        posting = json.dumps({
+            "@context": "https://schema.org",
+            "@type": "JobPosting",
+            "title": "DevOps Engineer",
+            "description": "Cautam DevOps. CV la cariere@acme.ro",
+            "datePosted": "2026-08-04",
+            "hiringOrganization": {"@type": "Organization", "name": "URBIO"},
+            "jobLocation": [{"@type": "Place",
+                             "address": {"@type": "PostalAddress",
+                                         "addressLocality": "Iași (Iași)"}}],
+        })
+        job = {"url": "https://www.ejobs.ro/user/locuri-de-munca/x/1", "description": "",
+               "company": "", "location": "Romania", "email_hr": ""}
+        with patch("scrapers.ro_boards.httpx.get") as get:
+            get.return_value = MagicMock(text=_DETAIL_HTML % posting, status_code=200)
+            status = _scraper(tmp_path)._enrich_from_detail(job)
+
+        assert status == "ok"                       # nu „unavailable"
+        assert job["location"] == "Iași (Iași)"     # locația nu se mai pierde
+        assert job["date_posted"] == "2026-08-04"   # codul de după nu mai e sărit
+        assert job["email_hr"] == "cariere@acme.ro"
+
+    def test_hiring_organization_as_list_is_handled(self, tmp_path):
+        """Aceeași formă de JSON-LD admite listă și pentru firmă."""
+        posting = json.dumps({
+            "@context": "https://schema.org",
+            "@type": "JobPosting",
+            "description": "text",
+            "datePosted": "2026-08-04",
+            "hiringOrganization": [{"@type": "Organization", "name": "URBIO"}],
+            "jobLocation": {"@type": "Place",
+                            "address": {"@type": "PostalAddress",
+                                        "addressLocality": "Cluj"}},
+        })
+        job = {"url": "https://www.ejobs.ro/user/locuri-de-munca/x/1", "description": "",
+               "company": "", "location": "Romania", "email_hr": ""}
+        with patch("scrapers.ro_boards.httpx.get") as get:
+            get.return_value = MagicMock(text=_DETAIL_HTML % posting, status_code=200)
+            status = _scraper(tmp_path)._enrich_from_detail(job)
+
+        assert status == "ok"
+        assert job["company"] == "URBIO"
+
 
 class TestDetailRateLimiting:
     """eJobs limitează agresiv: măsurat 2026-08-06, cu 4 workeri 81 din 106
