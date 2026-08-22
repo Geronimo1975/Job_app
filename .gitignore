@@ -50,3 +50,4 @@ client_secret_*.json
 
 # Artefacte de tooling local
 .jez/
+.claude/worktrees/

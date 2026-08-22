@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+:root{--bg:#0f172a;--surface:#1e293b;--surface2:#272f42;--fg:#f8fafc;--muted:#94a3b8;--border:#334155;--borderS:#475569;--accent:#22c55e;--accentFg:#052e16;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--backdrop:#0a0f1e}
+body{margin:0;background:var(--backdrop);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--fg);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+input,textarea,select,button{font:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:0;height:0}
+</style>
+</helmet>
+<div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px 12px">
+<div style="width:390px;height:844px;background:var(--bg);border:1px solid var(--border);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 24px 80px rgba(0,0,0,.5)">
+
+<sc-if value="{{ isFeed }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;height:100%;animation:rise .2s ease">
+  <div style="padding:22px 20px 12px;display:flex;align-items:baseline;justify-content:space-between">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.02em">Inbox</div>
+    <div style="font-size:13px;color:var(--muted)">{{ feedCountLabel }}</div>
+  </div>
+  <div style="display:flex;gap:8px;padding:4px 20px 12px;overflow-x:auto;flex:none">
+    <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+      <button onClick="{{ f.onTap }}" style="{{ f.style }}">{{ f.label }}</button>
+    </sc-for>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:2px 16px 16px;display:flex;flex-direction:column;gap:10px">
+    <sc-for list="{{ feedJobs }}" as="j" hint-placeholder-count="4">
+      <div onClick="{{ j.onOpen }}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;gap:12px;cursor:pointer" style-active="transform:scale(.985)">
+        <div style="position:relative;width:44px;height:44px;flex:none">
+          <svg width="44" height="44" viewBox="0 0 44 44">
+            <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" stroke-width="4"></circle>
+            <circle cx="22" cy="22" r="18" fill="none" stroke="{{ j.scoreColor }}" stroke-width="4" stroke-linecap="round" stroke-dasharray="{{ j.dash }}" transform="rotate(-90 22 22)"></circle>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--fg)">{{ j.score }}</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14.5px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.title }}</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.company }} · {{ j.location }}</div>
+          <div style="display:flex;gap:6px;margin-top:7px;align-items:center">
+            <span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:20px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)">{{ j.market }}</span>
+            <span style="{{ j.routeStyle }}">{{ j.routeLabel }}</span>
+            <span style="{{ j.pillStyle }}">{{ j.stateLabel }}</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);flex:none">{{ j.date }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSearch }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;animation:rise .2s ease">
+  <div style="padding:22px 20px 12px">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.02em">Search</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:2px">Ad-hoc JobSpy run · results staged before import</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:4px 20px 20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 8px">Keyword groups</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+        <button onClick="{{ g.onTap }}" style="{{ g.style }}">{{ g.label }}</button>
+      </sc-for>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px">Markets</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <sc-for list="{{ marketChips }}" as="m" hint-placeholder-count="6">
+        <button onClick="{{ m.onTap }}" style="{{ m.style }}">{{ m.label }}</button>
+      </sc-for>
+    </div>
+    <div style="margin-top:16px;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px">{{ sitesNote }}</div>
+    <sc-if value="{{ searchIdle }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ runSearch }}" style="margin-top:18px;width:100%;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer">Run search</button>
+    </sc-if>
+    <sc-if value="{{ searchRunning }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px">
+          <div style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite"></div>
+          Scraping…
+        </div>
+        <sc-for list="{{ searchLog }}" as="ln" hint-placeholder-count="2">
+          <div style="font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace">{{ ln }}</div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{ searchDone }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin:20px 0 10px">
+        <div style="font-weight:700;font-size:15px">Results</div>
+        <div style="font-size:12px;color:var(--muted)">{{ resultsSummary }}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ results }}" as="r" hint-placeholder-count="4">
+          <div style="{{ r.cardStyle }}">
+            <span style="{{ r.scoreStyle }}">{{ r.prescore }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.title }}</div>
+              <div style="font-size:12px;color:var(--muted)">{{ r.company }} · {{ r.platform }}</div>
+            </div>
+            <sc-if value="{{ r.canImport }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ r.onImport }}" style="flex:none;padding:7px 12px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-size:12px;font-weight:600;border-radius:8px;cursor:pointer">Import</button>
+            </sc-if>
+            <sc-if value="{{ r.badge }}" hint-placeholder-val="{{ false }}">
+              <span style="{{ r.badgeStyle }}">{{ r.badge }}</span>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <button onClick="{{ resetSearch }}" style="margin-top:14px;width:100%;padding:12px;background:transparent;border:1px solid var(--borderS);color:var(--muted);font-weight:600;border-radius:12px;cursor:pointer">New search</button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPipeline }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;animation:rise .2s ease">
+  <div style="padding:22px 20px 12px">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.02em">Pipeline</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:2px">Last full run · today 06:00 · 4m 12s</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:4px 20px 20px;display:flex;flex-direction:column;gap:14px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Funnel</div>
+      <sc-for list="{{ funnel }}" as="s" hint-placeholder-count="5">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:86px;font-size:12px;color:var(--muted);flex:none">{{ s.label }}</div>
+          <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="{{ s.barStyle }}"></div></div>
+          <div style="width:34px;text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums">{{ s.value }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Email rate limit</div>
+        <div style="font-size:13px;font-weight:700">{{ rateLabel }}</div>
+      </div>
+      <div style="margin-top:10px;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="{{ rateBarStyle }}"></div></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Daily cap persisted on disk · resets at midnight</div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px 16px">
+      <sc-for list="{{ agents }}" as="a" hint-placeholder-count="6">
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)">
+          <span style="{{ a.dotStyle }}"></span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13.5px">{{ a.name }}</div>
+            <div style="font-size:12px;color:var(--muted)">{{ a.detail }}</div>
+          </div>
+          <span style="{{ a.pillStyle }}">{{ a.status }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <button onClick="{{ runPipeline }}" style="{{ pipelineBtnStyle }}">{{ pipelineBtnLabel }}</button>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSent }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;animation:rise .2s ease">
+  <div style="padding:22px 20px 12px;display:flex;align-items:baseline;justify-content:space-between">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.02em">Sent</div>
+    <div style="font-size:13px;color:var(--muted)">{{ sentCountLabel }}</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:4px 16px 16px;display:flex;flex-direction:column;gap:10px">
+    <sc-for list="{{ sentJobs }}" as="j" hint-placeholder-count="3">
+      <div onClick="{{ j.onOpen }}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;gap:10px">
+          <div style="font-weight:600;font-size:14px">{{ j.title }}</div>
+          <span style="{{ j.sentBadgeStyle }}">{{ j.sentBadge }}</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:2px">{{ j.company }} · {{ j.location }}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px;display:flex;justify-content:space-between">
+          <span>{{ j.sentVia }}</span><span>{{ j.sentAt }}</span>
+        </div>
+      </div>
+    </sc-for>
+    <sc-if value="{{ noSent }}" hint-placeholder-val="{{ false }}">
+      <div style="color:var(--muted);text-align:center;padding:48px 20px;border:1px dashed var(--borderS);border-radius:12px">Nothing sent yet.</div>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;animation:rise .2s ease">
+  <div style="padding:22px 20px 12px">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.02em">Settings</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:4px 20px 20px;display:flex;flex-direction:column;gap:16px">
+    <div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Sending</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:4px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:14px;font-weight:500">Provider</div>
+          <div style="display:flex;background:var(--surface2);border-radius:9px;padding:3px;gap:2px">
+            <button onClick="{{ setGmx }}" style="{{ gmxStyle }}">GMX</button>
+            <button onClick="{{ setBrevo }}" style="{{ brevoStyle }}">Brevo</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+          <div><div style="font-size:14px;font-weight:500">Max emails / day</div><div style="font-size:12px;color:var(--muted)">Rate limit shared with CLI poll</div></div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <button onClick="{{ decCap }}" style="width:30px;height:30px;border-radius:8px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);cursor:pointer;font-weight:700">−</button>
+            <span style="font-weight:700;font-variant-numeric:tabular-nums;min-width:20px;text-align:center">{{ cap }}</span>
+            <button onClick="{{ incCap }}" style="width:30px;height:30px;border-radius:8px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);cursor:pointer;font-weight:700">+</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0">
+          <div><div style="font-size:14px;font-weight:500">Min match score</div><div style="font-size:12px;color:var(--muted)">AI gate for auto-generate</div></div>
+          <span style="font-weight:700">{{ minScore }}</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Appearance</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:500">Theme</div>
+        <div style="display:flex;background:var(--surface2);border-radius:9px;padding:3px;gap:2px">
+          <sc-for list="{{ themeChips }}" as="t" hint-placeholder-count="3">
+            <button onClick="{{ t.onTap }}" style="{{ t.style }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Markets ({{ marketsOnCount }} active)</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:4px 16px">
+        <sc-for list="{{ marketRows }}" as="m" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)">
+            <div><div style="font-size:14px;font-weight:500">{{ m.name }}</div><div style="font-size:12px;color:var(--muted)">{{ m.detail }}</div></div>
+            <button onClick="{{ m.onToggle }}" style="{{ m.switchStyle }}"><span style="{{ m.knobStyle }}"></span></button>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;position:absolute;inset:0;background:var(--bg);animation:rise .2s ease;z-index:5">
+  <div style="display:flex;align-items:center;gap:6px;padding:16px 12px 10px">
+    <button onClick="{{ goBack }}" style="background:none;border:0;color:var(--accent);display:flex;align-items:center;gap:2px;cursor:pointer;font-size:15px;padding:6px 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>Inbox
+    </button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 20px 20px">
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:19px;font-weight:700;line-height:1.25;letter-spacing:-.01em">{{ job.title }}</div>
+        <div style="font-size:14px;color:var(--muted);margin-top:4px">{{ job.company }} · {{ job.location }}</div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          <span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)">{{ job.market }}</span>
+          <span style="{{ job.pillStyle }}">{{ job.stateLabel }}</span>
+          <sc-if value="{{ job.salary }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--surface2);color:var(--fg);border:1px solid var(--border)">{{ job.salary }}</span></sc-if>
+        </div>
+      </div>
+      <div style="position:relative;width:64px;height:64px;flex:none">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="27" fill="none" stroke="var(--border)" stroke-width="5"></circle>
+          <circle cx="32" cy="32" r="27" fill="none" stroke="{{ job.scoreColor }}" stroke-width="5" stroke-linecap="round" stroke-dasharray="{{ job.dashBig }}" transform="rotate(-90 32 32)"></circle>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1">
+          <div style="font-size:17px;font-weight:700;color:var(--fg)">{{ job.score }}</div>
+          <div style="font-size:7.5px;color:var(--muted);margin-top:2px;letter-spacing:.05em">MATCH</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px">
+      <span style="{{ job.routeStyle }}">{{ job.routeLabel }}</span>
+      <div style="font-size:13px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ job.routeValue }}</div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px">Why this match</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <sc-for list="{{ job.reasons }}" as="r" hint-placeholder-count="3">
+        <div style="display:flex;gap:8px;font-size:13px;color:var(--fg);align-items:baseline">
+          <span style="color:var(--accent);font-weight:700;flex:none">+</span>{{ r }}
+        </div>
+      </sc-for>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px">Description</div>
+    <div style="font-size:13.5px;color:var(--muted);line-height:1.6;white-space:pre-wrap">{{ job.desc }}</div>
+    <sc-if value="{{ job.isError }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:16px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:12px 14px;font-size:13px;color:#f87171">{{ job.error }}</div>
+    </sc-if>
+  </div>
+  <div style="padding:14px 20px 22px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:10px">
+    <sc-if value="{{ job.isEmailDraft }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ generateJob }}" style="flex:1;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer">Generate package</button>
+    </sc-if>
+    <sc-if value="{{ job.isPortalDraft }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ openPortal }}" style="flex:1;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer">Apply via portal</button>
+      <button onClick="{{ markApplied }}" style="flex:1;padding:14px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-weight:700;border-radius:12px;cursor:pointer">Mark as applied</button>
+    </sc-if>
+    <sc-if value="{{ job.isApplied }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;padding:14px;text-align:center;font-weight:700;color:var(--accent);background:var(--surface2);border-radius:12px">Applied via portal ✓</div>
+    </sc-if>
+    <sc-if value="{{ job.isGenerating }}" hint-placeholder-val="{{ false }}">
+      <button style="flex:1;padding:14px;background:var(--surface2);color:var(--muted);font-weight:700;border:0;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px">
+        <span style="width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block"></span>Generating email + Anschreiben…
+      </button>
+    </sc-if>
+    <sc-if value="{{ job.isGenerated }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ openPreview }}" style="flex:1;padding:14px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-weight:700;border-radius:12px;cursor:pointer">Preview</button>
+      <button onClick="{{ openTransmit }}" style="flex:1;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer">Transmit</button>
+    </sc-if>
+    <sc-if value="{{ job.isSent }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ openPreview }}" style="flex:1;padding:14px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-weight:700;border-radius:12px;cursor:pointer">View sent package</button>
+    </sc-if>
+    <sc-if value="{{ job.isError }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ recoverJob }}" style="flex:1;padding:14px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-weight:700;border-radius:12px;cursor:pointer">Recover package</button>
+      <button onClick="{{ generateJob }}" style="flex:1;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer">Re-generate</button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPreview }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;position:absolute;inset:0;background:var(--bg);animation:rise .2s ease;z-index:6">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 12px 10px">
+    <button onClick="{{ backToDetail }}" style="background:none;border:0;color:var(--accent);display:flex;align-items:center;gap:2px;cursor:pointer;font-size:15px;padding:6px 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>Back
+    </button>
+    <div style="font-weight:700;font-size:15px">Preview package</div>
+    <div style="width:70px"></div>
+  </div>
+  <div style="display:flex;gap:2px;margin:6px 20px 0;background:var(--surface2);border-radius:10px;padding:3px">
+    <sc-for list="{{ pvTabs }}" as="t" hint-placeholder-count="3">
+      <button onClick="{{ t.onTap }}" style="{{ t.style }}">{{ t.label }}</button>
+    </sc-for>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px 20px">
+    <sc-if value="{{ pvEmail }}" hint-placeholder-val="{{ true }}">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">To</div>
+      <div style="font-family:ui-monospace,Menlo,monospace;font-size:13px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--muted)">{{ pvTo }}</div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Subject</div>
+      <input value="{{ pvSubject }}" onChange="{{ onSubject }}" style="width:100%;box-sizing:border-box;padding:11px 13px;background:var(--surface);color:var(--fg);border:1px solid var(--borderS);border-radius:10px;font-size:14px" />
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Body</div>
+      <textarea value="{{ pvBody }}" onChange="{{ onBody }}" rows="12" style="width:100%;box-sizing:border-box;padding:12px 13px;background:var(--surface);color:var(--fg);border:1px solid var(--borderS);border-radius:10px;font-size:13.5px;line-height:1.55;resize:vertical"></textarea>
+    </sc-if>
+    <sc-if value="{{ pvAnschreiben }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Anschreiben ({{ pvLang }})</div>
+      <textarea value="{{ pvLetter }}" onChange="{{ onLetter }}" rows="20" style="width:100%;box-sizing:border-box;padding:12px 13px;background:var(--surface);color:var(--fg);border:1px solid var(--borderS);border-radius:10px;font-size:13.5px;line-height:1.55;resize:vertical"></textarea>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Edits are kept — re-generating overwrites them.</div>
+    </sc-if>
+    <sc-if value="{{ pvFiles }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ attachments }}" as="f" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.name }}</div>
+              <div style="font-size:12px;color:var(--muted)">{{ f.meta }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+  <div style="padding:14px 20px 22px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:10px">
+    <button onClick="{{ savePackage }}" style="flex:1;padding:14px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-weight:700;border-radius:12px;cursor:pointer">{{ saveLabel }}</button>
+    <sc-if value="{{ pvCanSend }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ openTransmit }}" style="flex:1;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer">Transmit</button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isTransmit }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;position:absolute;inset:0;background:var(--bg);animation:rise .2s ease;z-index:7">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 12px 10px">
+    <button onClick="{{ backToDetail }}" style="background:none;border:0;color:var(--accent);display:flex;align-items:center;gap:2px;cursor:pointer;font-size:15px;padding:6px 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>Back
+    </button>
+    <div style="font-weight:700;font-size:15px">Transmit</div>
+    <div style="width:70px"></div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:10px 20px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">To</div><div style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;margin-top:3px">{{ pvTo }}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">Subject</div><div style="font-size:14px;margin-top:3px;font-weight:600">{{ pvSubject }}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">Attachments</div><div style="font-size:13.5px;margin-top:3px;color:var(--muted)">{{ attachSummary }}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">Provider</div><div style="font-size:13.5px;margin-top:3px">{{ providerLabel }}</div></div>
+    </div>
+    <div style="margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div style="font-size:13px;font-weight:600">Rate limit today</div>
+        <div style="font-size:13px;font-weight:700">{{ rateLabel }}</div>
+      </div>
+      <div style="margin-top:8px;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="{{ rateBarStyle }}"></div></div>
+    </div>
+    <div style="margin-top:14px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--warn)">Live send — the email goes out immediately and GESENDET is written to the Sheet.</div>
+  </div>
+  <div style="padding:14px 20px 22px;border-top:1px solid var(--border);background:var(--surface)">
+    <sc-if value="{{ notSending }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ confirmSend }}" style="width:100%;padding:15px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer;font-size:15px">Confirm &amp; send</button>
+    </sc-if>
+    <sc-if value="{{ sending }}" hint-placeholder-val="{{ false }}">
+      <button style="width:100%;padding:15px;background:var(--surface2);color:var(--muted);font-weight:700;border:0;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:15px">
+        <span style="width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block"></span>Sending via SMTP…
+      </button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSentOk }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;position:absolute;inset:0;background:var(--bg);animation:rise .25s ease;z-index:8;align-items:center;justify-content:center;padding:40px;text-align:center">
+  <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>
+  <div style="font-size:21px;font-weight:700;margin-top:18px;letter-spacing:-.01em">Application sent</div>
+  <div style="font-size:14px;color:var(--muted);margin-top:8px;line-height:1.55">{{ sentOkDetail }}</div>
+  <div style="font-size:12.5px;color:var(--muted);margin-top:6px">GESENDET written to Sheet · {{ rateLabel }} used</div>
+  <button onClick="{{ backToFeed }}" style="margin-top:28px;padding:13px 28px;background:var(--surface2);border:1px solid var(--borderS);color:var(--fg);font-weight:700;border-radius:12px;cursor:pointer">Back to inbox</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+<div style="flex:none;display:flex;border-top:1px solid var(--border);background:var(--surface);padding:8px 6px 18px">
+  <button onClick="{{ goFeed }}" style="{{ tabFeedStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><span style="font-size:10px;font-weight:600">Inbox</span></button>
+  <button onClick="{{ goSearch }}" style="{{ tabSearchStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg><span style="font-size:10px;font-weight:600">Search</span></button>
+  <button onClick="{{ goPipeline }}" style="{{ tabPipelineStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg><span style="font-size:10px;font-weight:600">Pipeline</span></button>
+  <button onClick="{{ goSent }}" style="{{ tabSentStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"></path><path d="M22 2 11 13"></path></svg><span style="font-size:10px;font-weight:600">Sent</span></button>
+  <button onClick="{{ goSettings }}" style="{{ tabSettingsStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span style="font-size:10px;font-weight:600">Settings</span></button>
+</div>
+</sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:430,&quot;height&quot;:900},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;Dark&quot;,&quot;options&quot;:[&quot;Dark&quot;,&quot;Light&quot;,&quot;True Black&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#f59e0b&quot;,&quot;options&quot;:[&quot;#22c55e&quot;,&quot;#38bdf8&quot;,&quot;#f59e0b&quot;,&quot;#e879f9&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Appearance&quot;}}">
+const THEMES = {
+  "Dark": {bg:"#0f172a",surface:"#1e293b",surface2:"#272f42",fg:"#f8fafc",muted:"#94a3b8",border:"#334155",borderS:"#475569",backdrop:"#0a0f1e"},
+  "Light": {bg:"#f1f5f9",surface:"#ffffff",surface2:"#f1f5f9",fg:"#0f172a",muted:"#64748b",border:"#e2e8f0",borderS:"#cbd5e1",backdrop:"#e2e8f0"},
+  "True Black": {bg:"#000000",surface:"#101114",surface2:"#1a1c20",fg:"#f8fafc",muted:"#8b93a1",border:"#26282c",borderS:"#3a3d42",backdrop:"#000000"}
+};
+const STATE_META = {
+  draft:{label:"DRAFT",bg:"rgba(148,163,184,.15)",fg:"#94a3b8"},
+  generating:{label:"GENERATING",bg:"rgba(245,158,11,.15)",fg:"#f59e0b"},
+  generated:{label:"READY",bg:"rgba(56,189,248,.15)",fg:"#38bdf8"},
+  sent:{label:"SENT",bg:"rgba(34,197,94,.15)",fg:"#22c55e"},
+  error:{label:"ERROR",bg:"rgba(239,68,68,.15)",fg:"#f87171"},
+  applied:{label:"APPLIED",bg:"rgba(56,189,248,.15)",fg:"#38bdf8"}
+};
+const SEED = [
+  {id:1,title:"AI Automation Engineer",company:"InnoGames",location:"Hamburg, DE (Hybrid)",market:"DE",score:87,route:"email",email:"bewerbung@innogames.com",url:"innogames.com/careers/4821",state:"generated",date:"08:12",lang:"DE",salary:"65–78k €",
+   reasons:["\"AI\" + \"Automation\" matched in title (+30)","Market keyword bonus: agentic, n8n (+15)","Application email found in listing (Bewerbungsart: Email)"],
+   desc:"Wir suchen einen AI Automation Engineer für unser Platform-Team. Du baust Agenten-Workflows (n8n, Python), integrierst LLM-APIs und automatisierst interne Prozesse.\n\nStack: Python 3.12, FastAPI, n8n, Claude/OpenAI APIs, GCP.",
+   subject:"Bewerbung als AI Automation Engineer – George Sebastian Cucuiet",
+   body:"Sehr geehrte Damen und Herren,\n\nmit großem Interesse habe ich Ihre Ausschreibung für die Position AI Automation Engineer gelesen. Meine Erfahrung mit Multi-Agent-Pipelines in Python, n8n-Workflows und LLM-Integration passt genau auf Ihr Profil.\n\nMeine vollständigen Unterlagen finden Sie im Anhang.\n\nMit freundlichen Grüßen\nGeorge Sebastian Cucuiet",
+   letter:"Sehr geehrte Damen und Herren,\n\nAgenten-Workflows sind genau das, was ich täglich baue: eine Multi-Agent-Bewerbungspipeline in Python (Scraping, AI-Analyse, PDF-Generierung, SMTP-Versand), orchestriert über n8n und Google Sheets.\n\nBei InnoGames möchte ich diese Erfahrung auf Platform-Prozesse übertragen: LLM-Integration mit sauberem Fallback-Verhalten, deterministische Prefilter vor teuren AI-Calls und Rate-Limit-bewusste Automatisierung.\n\nIch freue mich auf ein Gespräch.\n\nMit freundlichen Grüßen\nGeorge Sebastian Cucuiet"},
+  {id:2,title:"Agentic AI Developer (Remote)",company:"Distributed Labs",location:"Worldwide · Remote",market:"REMOTE",score:91,route:"portal",url:"linkedin.com/jobs/3928471",state:"draft",date:"07:58",lang:"EN",salary:null,
+   reasons:["\"Agentic AI\" matched in title (+30)","remote_global market — nomad profile fit","No email in listing → applies via portal (LinkedIn)"],
+   desc:"We're hiring an Agentic AI Developer to design autonomous LLM workflows: tool use, multi-step planning, evaluation harnesses. Fully remote, async-first team.\n\nStack: Python, LangGraph, Anthropic API, Temporal."},
+  {id:3,title:"Senior Python Developer",company:"Paradox Interactive",location:"Stockholm, SE (Hybrid)",market:"SE",score:74,route:"email",email:"recruiting@paradoxplaza.com",url:"paradoxplaza.com/jobs/1177",state:"draft",date:"07:41",lang:"EN",salary:null,
+   reasons:["\"Python\" matched in title (+15)","Flex signal: hybrid (+5)","Application email found in listing"],
+   desc:"Join our backend guild building services for grand strategy titles. Python, Django, PostgreSQL, and a healthy respect for save-game backwards compatibility."},
+  {id:4,title:"Backend Engineer (Gaming)",company:"Crytek",location:"Frankfurt, DE",market:"DE",score:68,route:"email",email:"jobs@crytek.com",url:"crytek.com/career/2290",state:"sent",date:"Yesterday",lang:"DE",salary:null,sentAt:"07.08 · 16:42",sentVia:"GMX SMTP",
+   reasons:["\"Engineer\" + gaming context (+20)","Market keyword bonus (+8)"],
+   desc:"Backend Engineer für CRYENGINE-Onlinedienste. C++/Python, Matchmaking, Telemetrie.",
+   subject:"Bewerbung als Backend Engineer – George Sebastian Cucuiet",
+   body:"Sehr geehrte Damen und Herren, …",letter:"Sehr geehrte Damen und Herren, …"},
+  {id:5,title:"ML Engineer, Ranking",company:"Booking.com",location:"Amsterdam, NL (Hybrid)",market:"NL",score:71,route:"email",email:"talent@booking.com",url:"jobs.booking.com/8841",state:"error",date:"Yesterday",lang:"EN",salary:"70–85k €",error:"SMTP timeout after 30s (smtp.gmx.net) — package intact, retry without re-generating.",generatedAt:true,
+   reasons:["\"ML Engineer\" matched in title (+25)","Application email found in listing"],
+   desc:"Build and ship ranking models serving millions of daily searches. Python, PyTorch, Spark.",
+   subject:"Application: ML Engineer, Ranking – George Sebastian Cucuiet",
+   body:"Dear Hiring Team,\n\nI'm applying for the ML Engineer position…",letter:"Dear Hiring Team,\n\nRanking systems reward exactly the discipline I practice…"},
+  {id:6,title:"Python Automation Engineer",company:"eSolutions Grup",location:"București, RO · Remote",market:"RO",score:62,route:"portal",url:"ejobs.ro/loc-de-munca/55712",state:"draft",date:"Yesterday",lang:"EN",salary:null,
+   reasons:["\"Python\" + \"Automation\" matched (+22)","ro_remote market — applies via platform (no email required)"],
+   desc:"Căutăm un inginer de automatizare Python pentru fluxuri de date și integrări API. Full remote în România."},
+  {id:7,title:"Game Data Analyst",company:"Ubisoft Berlin",location:"Berlin, DE",market:"DE",score:55,route:"portal",url:"ubisoft.com/careers/7431",state:"draft",date:"Wed",lang:"DE",salary:null,
+   reasons:["Gaming market keyword bonus (+10)","Title partially matched: data (+8)"],
+   desc:"Analyze player telemetry for live-ops decisions. SQL, Python, Tableau."}
+];
+const SEARCH_RESULTS = [
+  {id:101,prescore:78,title:"Automation Engineer (AI)",company:"Personio",platform:"indeed · DE",imported:false,skipped:false},
+  {id:102,prescore:64,title:"Python Backend Developer",company:"King",platform:"linkedin · SE",imported:false,skipped:false},
+  {id:103,prescore:51,title:"MLOps Engineer",company:"Adyen",platform:"indeed · NL",imported:false,skipped:false},
+  {id:104,prescore:47,title:"AI Workflow Developer",company:"Nagarro",platform:"ejobs · RO",imported:false,skipped:true},
+  {id:105,prescore:22,title:"IT Support Specialist",company:"Randstad",platform:"indeed · DE",imported:false,skipped:false,rejected:true}
+];
+const MARKETS = [
+  {code:"remote",name:"Remote Global",detail:"worldwide · LinkedIn only",on:true},
+  {code:"de",name:"Germany",detail:"de · letters in German · email flow",on:true},
+  {code:"at",name:"Austria",detail:"de · letters in German",on:true},
+  {code:"ch",name:"Switzerland",detail:"en",on:false},
+  {code:"nl",name:"Netherlands",detail:"en · email flow",on:true},
+  {code:"se",name:"Sweden",detail:"en",on:true},
+  {code:"no",name:"Norway",detail:"en",on:false},
+  {code:"ro",name:"Romania",detail:"en · eJobs · portal only",on:true},
+  {code:"saudi",name:"Saudi Arabia",detail:"en",on:false},
+  {code:"uae",name:"UAE",detail:"en",on:false}
+];
+const GROUPS = ["AI & Agents","Python & Backend","Automation / n8n","Game Dev"];
+const ROOT_SCREENS = ["feed","search","pipeline","sent","settings"];
+
+class Component extends DCLogic {
+  constructor(p){
+    super(p);
+    this.state = {
+      screen:"feed", filter:"All", jobId:null, pvTab:"email",
+      jobs: SEED.map(j=>({...j})), results:[], searchPhase:"idle", searchLog:[],
+      selGroups:["AI & Agents","Python & Backend"], selMarkets:["remote","de","nl"],
+      markets: MARKETS.map(m=>({...m})),
+      sentToday:3, cap:10, minScore:50, provider:"gmx",
+      pvSubject:"", pvBody:"", pvLetter:"", pvTo:"", saved:false,
+      sending:false, themeOverride:null, pipelineRunning:false
+    };
+    this._timers=[];
+  }
+  componentDidMount(){ this.applyTheme(); }
+  componentDidUpdate(){ this.applyTheme(); }
+  componentWillUnmount(){ this._timers.forEach(clearTimeout); }
+  later(fn,ms){ this._timers.push(setTimeout(fn,ms)); }
+  applyTheme(){
+    const t = THEMES[this.state.themeOverride ?? this.props.theme ?? "Dark"] || THEMES["Dark"];
+    const accent = this.props.accent ?? "#22c55e";
+    const light = (this.state.themeOverride ?? this.props.theme) === "Light";
+    const r = document.documentElement.style;
+    Object.entries({bg:t.bg,surface:t.surface,surface2:t.surface2,fg:t.fg,muted:t.muted,border:t.border,borderS:t.borderS,backdrop:t.backdrop,accent:accent,accentFg:light?"#ffffff":"#052e16"}).forEach(([k,v])=>r.setProperty("--"+k,v));
+  }
+  job(){ return this.state.jobs.find(j=>j.id===this.state.jobId); }
+  setJob(id,patch){ this.setState(s=>({jobs:s.jobs.map(j=>j.id===id?{...j,...patch}:j)})); }
+  scoreColor(v){ return v>=75?"#22c55e":v>=55?"#f59e0b":"#ef4444"; }
+  pillStyle(m){ return `font-size:10px;font-weight:700;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:${m.bg};color:${m.fg}`; }
+  chipStyle(active){
+    return active
+      ? "flex:none;padding:7px 14px;border-radius:20px;background:var(--accent);color:var(--accentFg);font-size:12.5px;font-weight:700;border:1px solid var(--accent);cursor:pointer;white-space:nowrap"
+      : "flex:none;padding:7px 14px;border-radius:20px;background:var(--surface);color:var(--muted);font-size:12.5px;font-weight:600;border:1px solid var(--border);cursor:pointer;white-space:nowrap";
+  }
+  segStyle(active){
+    return active
+      ? "padding:6px 12px;border-radius:7px;background:var(--accent);color:var(--accentFg);font-size:12px;font-weight:700;border:0;cursor:pointer"
+      : "padding:6px 12px;border-radius:7px;background:transparent;color:var(--muted);font-size:12px;font-weight:600;border:0;cursor:pointer";
+  }
+  tabStyle(name){
+    const active = this.state.screen===name;
+    return `flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;cursor:pointer;padding:6px 0;color:${active?"var(--accent)":"var(--muted)"}`;
+  }
+  decorate(j){
+    const m = STATE_META[j.state]||STATE_META.draft;
+    return {...j,
+      onOpen:()=>this.setState({jobId:j.id,screen:"detail"}),
+      scoreColor:this.scoreColor(j.score),
+      dash:`${(j.score/100*113).toFixed(1)} 113`,
+      dashBig:`${(j.score/100*170).toFixed(1)} 170`,
+      stateLabel:m.label, pillStyle:this.pillStyle(m),
+      routeLabel:j.route==="email"?"EMAIL":"PORTAL",
+      routeStyle:j.route==="email"
+        ? this.pillStyle({bg:"rgba(34,197,94,.15)",fg:"#22c55e"})
+        : this.pillStyle({bg:"rgba(56,189,248,.15)",fg:"#38bdf8"}),
+      routeValue:j.route==="email"?j.email:j.url,
+      isDraft:j.state==="draft", isGenerating:j.state==="generating",
+      isGenerated:j.state==="generated", isSent:j.state==="sent", isError:j.state==="error",
+      isEmailDraft:j.state==="draft"&&j.route==="email",
+      isPortalDraft:j.state==="draft"&&j.route==="portal",
+      isApplied:j.state==="applied"
+    };
+  }
+  loadPackage(j){
+    this.setState({
+      pvTo:j.route==="email"?j.email:"— portal application (no email) —",
+      pvSubject:j.subject||"", pvBody:j.body||"", pvLetter:j.letter||"", saved:false, pvTab:"email"
+    });
+  }
+  renderVals(){
+    const s=this.state, scr=s.screen;
+    const FILTERS=["All","Draft","Ready","Sent","Error"];
+    const match=(j,f)=>f==="All"||(f==="Draft"&&(j.state==="draft"||j.state==="generating"))||(f==="Ready"&&j.state==="generated")||(f==="Sent"&&(j.state==="sent"||j.state==="applied"))||(f==="Error"&&j.state==="error");
+    const feedJobs=s.jobs.filter(j=>match(j,s.filter)).map(j=>this.decorate(j));
+    const jb=this.job();
+    const sentJobs=s.jobs.filter(j=>j.state==="sent"||j.state==="applied").map(j=>({...this.decorate(j),
+      sentAt:j.sentAt||"Today",
+      sentVia:j.state==="applied"?"Portal · "+j.url:(j.sentVia||(s.provider==="gmx"?"GMX SMTP":"Brevo API")),
+      sentBadge:j.state==="applied"?"APPLIED":"GESENDET",
+      sentBadgeStyle:this.pillStyle(j.state==="applied"?{bg:"rgba(56,189,248,.15)",fg:"#38bdf8"}:{bg:"rgba(34,197,94,.15)",fg:"#22c55e"})+";flex:none;height:fit-content"}));
+    const ratePct=Math.min(100,s.sentToday/s.cap*100);
+    const funnelData=[["Scraped",412],["Prefilter",48],["Analyzed",22],["Generated",9],["Sent",3]];
+    const attachments=[
+      {name:"Anschreiben.pdf",meta:"Generated · 1 page"},
+      {name:"Lebenslauf_George_Sebastian_Cucuiet.pdf",meta:"CV · 2 pages"},
+      {name:"Zeugnisse.pdf",meta:"Certificates · 4 pages"},
+      {name:"Bewerbung_Komplett.pdf",meta:"Merged package · 7 pages"}
+    ];
+    const agentsData=[
+      ["ScraperAgent","10 markets · 412 jobs · linkedin rate-limited (best-effort)","SUCCESS"],
+      ["AnalyzerAgent","22 jobs analyzed · match scores written","SUCCESS"],
+      ["CoverLetterAgent","9 Anschreiben + PDFs generated","SUCCESS"],
+      ["DocumentAgent","Packages assembled & verified","SUCCESS"],
+      ["EmailAgent","3 sent · stopped at daily rate limit","PARTIAL"],
+      ["n8n SyncAgent","Sheet upsert ok · 48 rows","SUCCESS"]
+    ];
+    return {
+      isFeed:scr==="feed", isSearch:scr==="search", isPipeline:scr==="pipeline",
+      isSent:scr==="sent", isSettings:scr==="settings", isDetail:scr==="detail",
+      isPreview:scr==="preview", isTransmit:scr==="transmit", isSentOk:scr==="sentOk",
+      showTabs:ROOT_SCREENS.includes(scr),
+      goFeed:()=>this.setState({screen:"feed"}), goSearch:()=>this.setState({screen:"search"}),
+      goPipeline:()=>this.setState({screen:"pipeline"}), goSent:()=>this.setState({screen:"sent"}),
+      goSettings:()=>this.setState({screen:"settings"}),
+      tabFeedStyle:this.tabStyle("feed"), tabSearchStyle:this.tabStyle("search"),
+      tabPipelineStyle:this.tabStyle("pipeline"), tabSentStyle:this.tabStyle("sent"),
+      tabSettingsStyle:this.tabStyle("settings"),
+      feedCountLabel:`${feedJobs.length} of ${s.jobs.length} jobs`,
+      filters:FILTERS.map(f=>({label:f==="All"?f:`${f} ${s.jobs.filter(j=>match(j,f)).length}`,style:this.chipStyle(s.filter===f),onTap:()=>this.setState({filter:f})})),
+      feedJobs,
+      job: jb ? this.decorate(jb) : {reasons:[]},
+      goBack:()=>this.setState({screen:"feed"}),
+      backToDetail:()=>this.setState({screen:"detail"}),
+      backToFeed:()=>this.setState({screen:"feed"}),
+      generateJob:()=>{ const id=s.jobId; this.setJob(id,{state:"generating"});
+        this.later(()=>{ const j=this.state.jobs.find(x=>x.id===id);
+          this.setJob(id,{state:"generated",
+            subject:j.subject||((j.lang==="DE"?"Bewerbung als ":"Application: ")+j.title+" – George Sebastian Cucuiet"),
+            body:j.body||(j.lang==="DE"?"Sehr geehrte Damen und Herren,\n\nmit großem Interesse bewerbe ich mich auf die Position "+j.title+". Meine Unterlagen finden Sie im Anhang.\n\nMit freundlichen Grüßen\nGeorge Sebastian Cucuiet":"Dear Hiring Team,\n\nI'm excited to apply for the "+j.title+" role. Please find my full application attached.\n\nBest regards\nGeorge Sebastian Cucuiet"),
+            letter:j.letter||(j.lang==="DE"?"Sehr geehrte Damen und Herren,\n\n[AI-generiertes Anschreiben — auf die Stellenausschreibung zugeschnitten, matching_skills injiziert]\n\nMit freundlichen Grüßen\nGeorge Sebastian Cucuiet":"Dear Hiring Team,\n\n[AI-generated cover letter tailored to the listing — matching skills injected]\n\nBest regards\nGeorge Sebastian Cucuiet")});
+        },1600); },
+      recoverJob:()=>{ this.setJob(s.jobId,{state:"generated",error:null}); },
+      openPortal:()=>{ const j=this.job(); window.open("https://"+j.url,"_blank"); },
+      markApplied:()=>{ this.setJob(s.jobId,{state:"applied",sentAt:"Today"}); },
+      openPreview:()=>{ this.loadPackage(this.job()); this.setState({screen:"preview"}); },
+      openTransmit:()=>{ const j=this.job(); if(!this.state.pvSubject) this.loadPackage(j); this.setState({screen:"transmit"}); },
+      pvTabs:[["email","Email"],["letter","Anschreiben"],["files","Files"]].map(([k,l])=>({label:l,style:this.segStyle(s.pvTab===k)+";flex:1",onTap:()=>this.setState({pvTab:k})})),
+      pvEmail:s.pvTab==="email", pvAnschreiben:s.pvTab==="letter", pvFiles:s.pvTab==="files",
+      pvTo:s.pvTo, pvSubject:s.pvSubject, pvBody:s.pvBody, pvLetter:s.pvLetter,
+      pvLang: jb ? jb.lang : "DE",
+      onSubject:e=>this.setState({pvSubject:e.target.value,saved:false}),
+      onBody:e=>this.setState({pvBody:e.target.value,saved:false}),
+      onLetter:e=>this.setState({pvLetter:e.target.value,saved:false}),
+      savePackage:()=>{ this.setJob(s.jobId,{subject:s.pvSubject,body:s.pvBody,letter:s.pvLetter}); this.setState({saved:true}); },
+      saveLabel:s.saved?"Saved ✓":"Save edits",
+      pvCanSend: jb ? jb.state==="generated" : false,
+      attachments,
+      attachSummary:"4 PDFs · Anschreiben, CV, certificates, merged package",
+      providerLabel:s.provider==="gmx"?"GMX SMTP (smtp.gmx.net)":"Brevo transactional API",
+      notSending:!s.sending, sending:s.sending,
+      confirmSend:()=>{ this.setState({sending:true});
+        this.later(()=>{ this.setJob(s.jobId,{state:"sent",sentAt:"Today",sentVia:s.provider==="gmx"?"GMX SMTP":"Brevo API"});
+          this.setState(st=>({sending:false,screen:"sentOk",sentToday:st.sentToday+1})); },1700); },
+      sentOkDetail: jb ? `${jb.title} at ${jb.company}` : "",
+      rateLabel:`${s.sentToday} / ${s.cap}`,
+      rateBarStyle:`height:100%;width:${ratePct}%;background:${ratePct>=100?"#ef4444":ratePct>=70?"#f59e0b":"var(--accent)"};border-radius:4px;transition:width .4s ease`,
+      groups:GROUPS.map(g=>({label:g,style:this.chipStyle(s.selGroups.includes(g)),onTap:()=>this.setState(st=>({selGroups:st.selGroups.includes(g)?st.selGroups.filter(x=>x!==g):[...st.selGroups,g]}))})),
+      marketChips:s.markets.map(m=>({label:m.name,style:this.chipStyle(s.selMarkets.includes(m.code)),onTap:()=>this.setState(st=>({selMarkets:st.selMarkets.includes(m.code)?st.selMarkets.filter(x=>x!==m.code):[...st.selMarkets,m.code]}))})),
+      sitesNote:`Boolean queries · ${s.selGroups.length} keyword group${s.selGroups.length===1?"":"s"} × ${s.selMarkets.length} market${s.selMarkets.length===1?"":"s"} · Indeed + LinkedIn (best-effort) · dedupe against seen_jobs`,
+      searchIdle:s.searchPhase==="idle", searchRunning:s.searchPhase==="running", searchDone:s.searchPhase==="done",
+      searchLog:s.searchLog,
+      runSearch:()=>{ this.setState({searchPhase:"running",searchLog:["[remote/linkedin] querying…"]});
+        this.later(()=>this.setState(st=>({searchLog:[...st.searchLog,"[de/indeed] 214 rows · sanitized: is_remote → local filter"]})),700);
+        this.later(()=>this.setState(st=>({searchLog:[...st.searchLog,"[nl/indeed] 88 rows","[warning] linkedin rate-limited (best-effort)"]})),1400);
+        this.later(()=>this.setState({searchPhase:"done",results:SEARCH_RESULTS.map(r=>({...r}))}),2300); },
+      resetSearch:()=>this.setState({searchPhase:"idle",results:[],searchLog:[]}),
+      resultsSummary:`${s.results.length} staged · ${s.results.filter(r=>r.rejected).length} below prescore 30`,
+      results:s.results.map(r=>({...r,
+        cardStyle:`display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;${r.rejected?"opacity:.45":""}`,
+        scoreStyle:`flex:none;min-width:34px;text-align:center;font-weight:700;font-size:13px;padding:5px 0;border-radius:8px;background:${r.rejected?"rgba(239,68,68,.15)":"var(--surface2)"};color:${r.rejected?"#f87171":this.scoreColor(r.prescore+20)}`,
+        canImport:!r.imported&&!r.skipped&&!r.rejected,
+        badge:r.imported?"Imported":r.skipped?"Skipped — holds package":r.rejected?"Below gate":null,
+        badgeStyle:this.pillStyle(r.imported?{bg:"rgba(34,197,94,.15)",fg:"#22c55e"}:r.skipped?{bg:"rgba(245,158,11,.15)",fg:"#f59e0b"}:{bg:"rgba(239,68,68,.15)",fg:"#f87171"}),
+        onImport:()=>{ this.setState(st=>({
+          results:st.results.map(x=>x.id===r.id?{...x,imported:true}:x),
+          jobs:[{id:Date.now(),title:r.title,company:r.company,location:r.platform.split(" · ")[1]||"",market:(r.platform.split(" · ")[1]||"").toUpperCase(),score:r.prescore+12,route:r.prescore>70?"email":"portal",email:"careers@"+r.company.toLowerCase().replace(/\W/g,"")+".com",url:r.platform,state:"draft",date:"Now",lang:"EN",salary:null,reasons:["Imported from ad-hoc search · prescore "+r.prescore],desc:"Imported from search staging — full description fetched on open."},...st.jobs]
+        })); }
+      })),
+      funnel:funnelData.map(([label,value])=>({label,value,barStyle:`height:100%;width:${Math.max(3,value/412*100)}%;background:var(--accent);border-radius:4px`})),
+      agents:agentsData.map(([name,detail,status])=>({name,detail,status,
+        dotStyle:`width:8px;height:8px;border-radius:50%;flex:none;background:${status==="SUCCESS"?"var(--ok)":status==="PARTIAL"?"var(--warn)":"var(--err)"}`,
+        pillStyle:this.pillStyle(status==="SUCCESS"?{bg:"rgba(34,197,94,.15)",fg:"#22c55e"}:{bg:"rgba(245,158,11,.15)",fg:"#f59e0b"})})),
+      pipelineBtnLabel:s.pipelineRunning?"Running… scrape → analyze → generate":"Run full pipeline (dry-run)",
+      pipelineBtnStyle:s.pipelineRunning
+        ?"width:100%;padding:14px;background:var(--surface2);color:var(--muted);font-weight:700;border:0;border-radius:12px"
+        :"width:100%;padding:14px;background:var(--accent);color:var(--accentFg);font-weight:700;border:0;border-radius:12px;cursor:pointer",
+      runPipeline:()=>{ if(s.pipelineRunning)return; this.setState({pipelineRunning:true}); this.later(()=>this.setState({pipelineRunning:false}),2500); },
+      sentJobs, noSent:sentJobs.length===0,
+      sentCountLabel:`${sentJobs.length} application${sentJobs.length===1?"":"s"}`,
+      setGmx:()=>this.setState({provider:"gmx"}), setBrevo:()=>this.setState({provider:"brevo"}),
+      gmxStyle:this.segStyle(s.provider==="gmx"), brevoStyle:this.segStyle(s.provider==="brevo"),
+      cap:s.cap, incCap:()=>this.setState(st=>({cap:Math.min(50,st.cap+1)})), decCap:()=>this.setState(st=>({cap:Math.max(1,st.cap-1)})),
+      minScore:s.minScore,
+      themeChips:Object.keys(THEMES).map(t=>({label:t,style:this.segStyle((s.themeOverride??this.props.theme??"Dark")===t),onTap:()=>this.setState({themeOverride:t})})),
+      marketsOnCount:s.markets.filter(m=>m.on).length,
+      marketRows:s.markets.map(m=>({...m,
+        onToggle:()=>this.setState(st=>({markets:st.markets.map(x=>x.code===m.code?{...x,on:!x.on}:x)})),
+        switchStyle:`width:44px;height:26px;border-radius:13px;border:0;cursor:pointer;position:relative;transition:background .18s ease;background:${m.on?"var(--accent)":"var(--surface2)"};flex:none`,
+        knobStyle:`position:absolute;top:3px;left:${m.on?"21px":"3px"};width:20px;height:20px;border-radius:50%;background:#fff;transition:left .18s ease;display:block;box-shadow:0 1px 3px rgba(0,0,0,.3)`}))
+    };
+  }
+}
+</script>
+</body>
+</html>
