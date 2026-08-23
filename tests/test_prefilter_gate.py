@@ -306,3 +306,101 @@ class TestRequireRemote:
         assert [j["url"] for j in kept] == ["https://a.com/1"]
         assert stats["nu_e_remote"] == 1
         assert stats["fara_email"] == 1
+
+
+# Proză reală, ca detecția să lucreze pe ce apare efectiv în anunțuri.
+_DESC_EN = ("You will work with our team on the platform and we expect that you "
+            "have experience with Python and modern development practices for "
+            "the role, as well as skills in Django and API design.")
+_DESC_SV = ("Vi söker dig som vill bygga framtidens verktyg och som gillar att "
+            "arbeta med moderna system. Du har erfarenhet av utveckling och vill "
+            "arbeta tillsammans med ett härligt gäng kollegor på vårt kontor.")
+
+
+class TestLanguageGate:
+    """Poarta de limbă: userul citește EN/DE/RO, deci un anunț suedez e
+    inutilizabil oricât de bine ar scora. Filtrul respinge doar pe dovadă
+    pozitivă — „nu știu ce limbă e" trece mai departe."""
+
+    CFG_LANG = {
+        "skills": CFG["skills"],
+        "scraping": {"filters": {**CFG["scraping"]["filters"],
+                                 "allowed_languages": ["en", "de", "ro"]}},
+    }
+
+    def test_foreign_language_job_is_dropped(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_SV)}
+        kept, stats = apply_prefilter_gate([job], self.CFG_LANG, seen)
+        assert kept == []
+        assert stats["limba_straina"] == 1
+        assert stats["respinse"] == 0        # respins pentru limbă, nu pentru scor
+
+    def test_allowed_language_job_is_kept(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_EN)}
+        kept, stats = apply_prefilter_gate([job], self.CFG_LANG, seen)
+        assert len(kept) == 1
+        assert stats["limba_straina"] == 0
+
+    def test_job_without_description_is_kept(self, tmp_path):
+        """Cazul care contează cel mai mult: 77% dintre anunțuri n-au
+        descriere. Poarta NU are voie să le taie pe un câmp gol (JOB-48)."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = _job("https://a.com/1", "Python Django Developer")
+        kept, stats = apply_prefilter_gate([job], self.CFG_LANG, seen)
+        assert len(kept) == 1
+        assert stats["limba_straina"] == 0
+
+    def test_language_is_not_filtered_by_default(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_SV)}
+        kept, stats = apply_prefilter_gate([job], CFG, seen)
+        assert len(kept) == 1
+        assert stats["limba_straina"] == 0
+
+    def test_foreign_language_job_is_remembered(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_SV)}
+        apply_prefilter_gate([job], self.CFG_LANG, seen)
+        assert seen.entries["https://a.com/1"]["decision"] == RESPINS_PREFILTRU
+
+    def test_language_is_checked_before_email(self, tmp_path):
+        """Un anunț suedez fără email se numără la limbă, nu la email: limba e
+        cauza de fond, adresa e doar felul în care s-ar aplica."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        cfg = {"skills": CFG["skills"],
+               "scraping": {"filters": {**CFG["scraping"]["filters"],
+                                        "allowed_languages": ["en", "de", "ro"],
+                                        "require_email": True}}}
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_SV)}
+        kept, stats = apply_prefilter_gate([job], cfg, seen)
+        assert kept == []
+        assert stats["limba_straina"] == 1
+        assert stats["fara_email"] == 0
+
+    def test_per_market_override(self, tmp_path):
+        """Regula e per piață, ca `require_email`."""
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        cfg = {"skills": CFG["skills"],
+               "scraping": {"filters": {**CFG["scraping"]["filters"],
+                                        "allowed_languages": ["en"]},
+                            "markets": {"se": {"allowed_languages": ["en", "sv"]}}}}
+        # Piața `se` acceptă suedeza — dar detecția întoarce „alta", nu „sv",
+        # deci un anunț suedez tot cade. Scutirea reală se face cu listă goală.
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_SV),
+               "market": "se"}
+        kept, _ = apply_prefilter_gate([job], cfg, seen)
+        assert kept == []
+
+    def test_market_can_disable_the_rule_with_an_empty_list(self, tmp_path):
+        seen = SeenIndex.load(tmp_path / "seen.json")
+        cfg = {"skills": CFG["skills"],
+               "scraping": {"filters": {**CFG["scraping"]["filters"],
+                                        "allowed_languages": ["en", "de", "ro"]},
+                            "markets": {"se": {"allowed_languages": []}}}}
+        job = {**_job("https://a.com/1", "Python Django Developer", _DESC_SV),
+               "market": "se"}
+        kept, stats = apply_prefilter_gate([job], cfg, seen)
+        assert len(kept) == 1
+        assert stats["limba_straina"] == 0

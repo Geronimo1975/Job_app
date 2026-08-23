@@ -468,6 +468,33 @@ class TestEmailIsAnApplicationAddress:
         """`inclusion@`/`diversity@` sunt aceeași categorie ca
         `reasonable.accommodations@`: text standard, nu destinatar."""
         assert self._mail(tmp_path, "inclusion@kraken.tech") == ""
+
+    def test_data_protection_address_in_a_local_language_is_rejected(self, tmp_path):
+        """Lista de excludere era doar engleză+germană (`privacy`,
+        `datenschutz`), dar odată cu piețele europene (JOB-58) apar aceleași
+        adrese în limba locală. Caz REAL, prins într-o rulare din 2026-08-23:
+        `Ochrona.danych@roche.com` — poloneză pentru „protecția datelor" — a
+        trecut drept adresă de candidatură și ar fi primit o aplicație."""
+        assert self._mail(tmp_path, "Ochrona.danych@roche.com") == ""
+
+    def test_data_protection_addresses_across_markets_are_rejected(self, tmp_path):
+        """Câte un echivalent pentru fiecare limbă de piață scrapată."""
+        for address in (
+            "ochrana.osobnich.udaju@firma.cz",      # cehă
+            "privacidad@empresa.es",               # spaniolă
+            "privacidade@empresa.pt",              # portugheză
+            "personvern@selskap.no",               # norvegiană
+            "personuppgifter@bolag.se",            # suedeză
+            "persondata@virksomhed.dk",            # daneză
+            "tietosuoja@yritys.fi",                # finlandeză
+            "confidentialitate@firma.ro",          # română
+            "rodo@firma.pl",                       # GDPR în poloneză
+        ):
+            assert self._mail(tmp_path, address) == "", address
+
+    def test_local_language_denylist_does_not_hide_a_good_address(self, tmp_path):
+        assert self._mail(tmp_path, "Ochrona.danych@roche.com, kariera@roche.com") \
+            == "kariera@roche.com"
         assert self._mail(tmp_path, "diversity@x.com") == ""
 
     def test_nan_never_becomes_the_string_nan(self, tmp_path):

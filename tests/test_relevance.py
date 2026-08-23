@@ -4,7 +4,10 @@ Teste pentru prefiltrul determinist — funcții pure, fără rețea și fără 
 
 from filters.relevance import (
     HARD_REJECT,
+    LANG_UNKNOWN,
+    detect_job_language,
     is_remote_job,
+    language_allowed,
     passes_prefilter,
     requires_email,
     requires_remote,
@@ -514,3 +517,153 @@ class TestRequiresRemote:
         """`remote: true` pe piață NU trebuie să activeze poarta singur."""
         cfg = {"scraping": {"markets": {"ro": {"remote": True}}}}
         assert requires_remote({"market": "ro"}, cfg) is False
+
+
+# Fragmente REALE din anunțurile scrapate 2026-08-23, ca detecția să fie
+# calibrată pe proza care apare efectiv, nu pe exemple de laborator.
+TEXT_EN = (
+    "Are you obsessed with using AI and code to build tools that eliminate chaos "
+    "and manual work? You will work with our team on the platform, and we expect "
+    "you to have experience with Python and modern development practices."
+)
+TEXT_DE = (
+    "Mit innovativen Lösungen sorgen wir dafür, dass Organisationen erfolgsrelevante "
+    "Themen umsetzen. Wir suchen eine Person, die mit uns zusammenarbeitet und die "
+    "Projekte von der Idee bis zur Umsetzung begleitet. Sie sind bei uns richtig."
+)
+TEXT_RO = (
+    "Căutăm un coleg care să se alăture echipei noastre de dezvoltare. Vei lucra "
+    "cu tehnologii moderne și vei contribui la proiecte importante. Cerințele "
+    "pentru acest rol sunt experiență în programare și dorința de a învăța."
+)
+TEXT_RO_FARA_DIACRITICE = (
+    "Cautam un coleg care sa se alature echipei noastre de dezvoltare. Vei lucra "
+    "cu tehnologii moderne si vei contribui la proiecte importante. Cerintele "
+    "pentru acest rol sunt experienta in programare si dorinta de a invata."
+)
+TEXT_SV = (
+    "De flesta revisorer som gillar teknik får nöja sig med att önska sig bättre "
+    "verktyg. Vi söker dig som vill bygga dem i stället, inifrån ett modernt "
+    "produktutvecklingsteam och tillsammans med ett härligt gäng kollegor."
+)
+TEXT_NO = (
+    "Sikt er kunnskapssektorens tjenesteleverandør og vi søker en seniorutvikler "
+    "til vårt team i Oslo. Du vil arbeide med moderne teknologi og bidra til "
+    "utvikling av tjenester som brukes av mange mennesker hver dag."
+)
+TEXT_ES = (
+    "Buscamos un desarrollador para unirse a nuestro equipo en Madrid. Trabajarás "
+    "con tecnologías modernas y participarás en proyectos importantes para "
+    "nuestros clientes. Se requiere experiencia previa en desarrollo de software."
+)
+
+
+def _job_text(text, title=""):
+    return {"title": title, "description": text}
+
+
+class TestDetectJobLanguage:
+    """Detecție de limbă la nivel de POARTĂ, deci înainte de orice apel AI.
+
+    `AnalyzerAgent._detect_language` există deja, dar e binară (DE vs EN) și
+    rulează în pasul `analyze` — adică DUPĂ poartă, pe joburi pentru care s-a
+    plătit deja. Aici e nevoie de un al treilea verdict: „clar altă limbă".
+    """
+
+    def test_english_is_detected(self):
+        assert detect_job_language(_job_text(TEXT_EN)) == "en"
+
+    def test_german_is_detected(self):
+        assert detect_job_language(_job_text(TEXT_DE)) == "de"
+
+    def test_romanian_is_detected(self):
+        assert detect_job_language(_job_text(TEXT_RO)) == "ro"
+
+    def test_romanian_without_diacritics_is_detected(self):
+        """Anunțurile românești scriu des fără diacritice — `si`, `sa`,
+        `experienta`. Fără normalizare ar fi citite drept altă limbă."""
+        assert detect_job_language(_job_text(TEXT_RO_FARA_DIACRITICE)) == "ro"
+
+    def test_swedish_is_foreign(self):
+        assert detect_job_language(_job_text(TEXT_SV)) == "alta"
+
+    def test_norwegian_is_foreign(self):
+        assert detect_job_language(_job_text(TEXT_NO)) == "alta"
+
+    def test_spanish_is_foreign(self):
+        """Spaniola împarte cuvinte scurte cu româna (`de`, `la`, `un`), deci
+        e cazul-capcană: marcatorii RO trebuie să fie distinctivi."""
+        assert detect_job_language(_job_text(TEXT_ES)) == "alta"
+
+    def test_short_text_is_unknown(self):
+        """Fără destul text nu se poate decide — și „nu știu" NU e „străin"."""
+        assert detect_job_language(_job_text("AI Engineer")) == LANG_UNKNOWN
+
+    def test_keyword_list_description_is_unknown_not_foreign(self):
+        """Caz REAL (eJobs, „Inginer Software – Piatra Neamt"): descrierea e o
+        listă de keyword-uri, nu proză — destule cuvinte ca să treacă pragul,
+        dar zero cuvinte-funcție în ORICE limbă. Verdictul trebuie să fie
+        „necunoscut", nu „străin": altfel un anunț românesc valid e respins
+        fiindcă n-are propoziții. Respingem doar pe dovadă POZITIVĂ."""
+        text = ("Neamt, Piatra Neamt, studii superioare, Software Engineer, "
+                "Inginer Software, Full-Stack Developer, Backend Developer, "
+                "PHP Developer, Web Developer, JavaScript Developer, Python")
+        assert detect_job_language(_job_text(text)) == LANG_UNKNOWN
+
+    def test_missing_description_is_unknown(self):
+        """Cazul LinkedIn: 1056 de anunțuri fără descriere (măsurat
+        2026-08-23). Trebuie să iasă „necunoscut", ca poarta să nu le taie."""
+        assert detect_job_language({"title": "Senior Python Developer"}) == LANG_UNKNOWN
+        assert detect_job_language({}) == LANG_UNKNOWN
+
+    def test_title_is_included_in_the_signal(self):
+        job = _job_text(TEXT_DE, title="Softwareentwickler")
+        assert detect_job_language(job) == "de"
+
+
+class TestLanguageAllowed:
+    """Poarta de limbă: aceeași formă ca `requires_email`/`requires_remote` —
+    regulă per piață cu fallback global, opt-in."""
+
+    CFG = {
+        "scraping": {
+            "filters": {"allowed_languages": ["en", "de", "ro"]},
+            "markets": {"se": {"allowed_languages": ["en"]}},
+        }
+    }
+
+    def test_allowed_language_passes(self):
+        assert language_allowed(_job_text(TEXT_EN), self.CFG) is True
+        assert language_allowed(_job_text(TEXT_DE), self.CFG) is True
+        assert language_allowed(_job_text(TEXT_RO), self.CFG) is True
+
+    def test_foreign_language_is_rejected(self):
+        assert language_allowed(_job_text(TEXT_SV), self.CFG) is False
+
+    def test_unknown_language_is_allowed(self):
+        """FAIL-OPEN, și e regula cea mai importantă. 77% din anunțuri n-au
+        descriere (LinkedIn); dacă „nu pot detecta" ar însemna „respinge",
+        poarta ar goli exact piețele bune — capcana din JOB-48."""
+        assert language_allowed({"title": "AI Engineer"}, self.CFG) is True
+        assert language_allowed({}, self.CFG) is True
+
+    def test_market_override_is_stricter(self):
+        job = {**_job_text(TEXT_DE), "market": "se"}
+        assert language_allowed(job, self.CFG) is False
+
+    def test_market_override_still_accepts_its_language(self):
+        job = {**_job_text(TEXT_EN), "market": "se"}
+        assert language_allowed(job, self.CFG) is True
+
+    def test_unknown_market_follows_the_global_rule(self):
+        job = {**_job_text(TEXT_DE), "market": "necunoscuta"}
+        assert language_allowed(job, self.CFG) is True
+
+    def test_default_is_permissive_when_nothing_is_configured(self):
+        """Fără `allowed_languages`, poarta nu filtrează deloc — o config
+        existentă nu are voie să înceapă brusc să taie rânduri."""
+        assert language_allowed(_job_text(TEXT_SV), {}) is True
+
+    def test_empty_list_is_treated_as_no_rule(self):
+        cfg = {"scraping": {"filters": {"allowed_languages": []}}}
+        assert language_allowed(_job_text(TEXT_SV), cfg) is True

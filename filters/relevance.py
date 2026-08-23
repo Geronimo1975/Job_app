@@ -234,6 +234,142 @@ def requires_remote(job: dict, config: dict) -> bool:
     return bool((scraping.get("filters", {}) or {}).get("require_remote", False))
 
 
+# ── Limba anunțului ──────────────────────────────────────────
+# Verdictele posibile ale detecției. „Necunoscut" NU e „străin": 77% dintre
+# anunțuri n-au descriere (LinkedIn, măsurat 2026-08-23), iar a le trata ca
+# străine ar goli exact piețele bune — capcana din JOB-48.
+LANG_UNKNOWN = ""
+LANG_OTHER = "alta"
+
+# Sub atâtea cuvinte nu există semnal, oricâți marcatori s-ar potrivi
+# întâmplător. Un titlu singur are ~5 cuvinte, deci cade aici.
+_LANG_MIN_WORDS = 20
+# Densitatea minimă de cuvinte-funcție ale unei limbi cunoscute. Sub prag,
+# textul e destul de lung ca să existe semnal, dar niciuna dintre limbile
+# noastre nu-l explică → e altă limbă.
+_LANG_MIN_DENSITY = 0.045
+
+# Marcatori = cuvinte-funcție frecvente, alese DISTINCTIV. Româna împarte
+# cuvinte scurte cu spaniola/italiana (`de`, `la`, `un`, `este`), iar germana
+# cu nordicele (`for`, `en`) — de aceea listele evită tocmai suprapunerile și
+# păstrează ce e specific: `pentru`/`nostru` (nu `de`), `und`/`für` (nu `en`).
+_LANG_MARKERS: dict[str, frozenset[str]] = {
+    "en": frozenset({
+        "the", "and", "with", "for", "you", "are", "our", "will", "have", "this",
+        "that", "from", "your", "we", "is", "to", "of", "as", "be", "work",
+        "experience", "team", "skills", "role", "about", "who", "what",
+    }),
+    "de": frozenset({
+        "und", "der", "die", "das", "mit", "für", "wir", "sie", "ist", "sind",
+        "ein", "eine", "den", "dem", "von", "zu", "im", "auf", "nicht", "oder",
+        "bei", "auch", "uns", "unser", "unsere", "dich", "du", "sowie", "durch",
+    }),
+    "ro": frozenset({
+        "și", "si", "sau", "pentru", "care", "sunt", "este", "să", "sa", "cu",
+        "din", "prin", "către", "catre", "nostru", "noastre", "noastră", "noastra",
+        "vei", "vom", "ești", "esti", "echipa", "echipă", "dezvoltare", "cerințe",
+        "cerinte", "experiență", "experienta", "responsabilități", "responsabilitati",
+        "căutăm", "cautam", "alături", "alaturi",
+    }),
+}
+# Limbile pe care le RECUNOAȘTEM ca fiind străine. Respingerea se face doar pe
+# dovadă POZITIVĂ („asta e suedeză"), nu pe absența marcatorilor noștri: o
+# descriere care e listă de keyword-uri („Software Engineer, PHP Developer, …")
+# n-are cuvinte-funcție în nicio limbă, iar regula „nu recunosc → străin" o
+# respingea (caz real: „Inginer Software – Piatra Neamt", anunț ROMÂNESC).
+# Acoperă limbile piețelor scrapate; una neacoperită iese „necunoscut", deci
+# trece — consecvent cu fail-open.
+_FOREIGN_MARKERS: dict[str, frozenset[str]] = {
+    "sv": frozenset({"och", "att", "som", "med", "för", "är", "vi", "du", "av",
+                     "på", "det", "en", "ett", "till", "har", "kan", "söker"}),
+    "nb": frozenset({"og", "som", "med", "til", "vi", "du", "av", "på", "det",
+                     "en", "et", "har", "kan", "søker", "være", "eller", "for"}),
+    "da": frozenset({"og", "som", "med", "til", "vi", "du", "af", "på", "det",
+                     "en", "et", "har", "kan", "søger", "være", "eller"}),
+    "fi": frozenset({"ja", "on", "sekä", "että", "ovat", "sinä", "meidän",
+                     "työ", "kanssa", "tai", "voit", "haemme", "osaamista"}),
+    "es": frozenset({"que", "los", "las", "para", "con", "una", "por", "del",
+                     "nuestro", "nuestra", "buscamos", "trabajo", "equipo",
+                     "experiencia", "desarrollo", "como", "más"}),
+    "pt": frozenset({"que", "para", "com", "uma", "por", "dos", "das", "nosso",
+                     "nossa", "procuramos", "trabalho", "equipa", "equipe",
+                     "experiência", "desenvolvimento", "como", "mais", "você"}),
+    "pl": frozenset({"oraz", "dla", "jest", "się", "nie", "lub", "przez", "praca",
+                     "nasze", "naszym", "doświadczenie", "zespół", "będziesz",
+                     "który", "która", "które", "wraz"}),
+    "cs": frozenset({"pro", "jsme", "jsou", "nebo", "naše", "našeho", "práce",
+                     "tým", "zkušenosti", "budeš", "který", "která", "které",
+                     "také", "své"}),
+    "nl": frozenset({"een", "het", "van", "voor", "met", "wij", "zijn", "onze",
+                     "jij", "werk", "ervaring", "team", "bij", "als", "naar"}),
+    "fr": frozenset({"les", "des", "une", "pour", "avec", "vous", "nous", "est",
+                     "sont", "notre", "votre", "dans", "sur", "qui", "que"}),
+    "it": frozenset({"che", "per", "con", "una", "del", "della", "nostro",
+                     "nostra", "sono", "gli", "nel", "alla", "esperienza"}),
+}
+_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def _best_match(words: list[str], markers: dict[str, frozenset[str]]) -> tuple[str, float]:
+    """Limba cu cei mai mulți marcatori și densitatea ei."""
+    scores = {lang: sum(1 for w in words if w in marks)
+              for lang, marks in markers.items()}
+    best = max(scores, key=lambda lang: scores[lang])
+    return best, scores[best] / len(words)
+
+
+def detect_job_language(job: dict) -> str:
+    """Limba în care e SCRIS anunțul: `en`/`de`/`ro`, `alta`, sau necunoscut.
+
+    Diferă de `agents.base_agent.job_language()`, care spune în ce limbă se
+    face CANDIDATURA (analiză AI → piață → implicit) și nu se uită niciodată la
+    textul anunțului. Diferă și de `AnalyzerAgent._detect_language`, care e
+    binar DE/EN și rulează în pasul `analyze` — adică după ce s-a plătit deja
+    apelul AI. Poarta are nevoie de verdictul al treilea, „clar altă limbă",
+    ca să poată respinge un anunț suedez înainte de orice cheltuială.
+    """
+    text = f"{job.get('title') or ''} {job.get('description') or ''}".lower()
+    words = _WORD_RE.findall(text)
+    if len(words) < _LANG_MIN_WORDS:
+        return LANG_UNKNOWN
+
+    known, known_density = _best_match(words, _LANG_MARKERS)
+    foreign, foreign_density = _best_match(words, _FOREIGN_MARKERS)
+
+    # Cea mai bine reprezentată limbă câștigă. Comparația e necesară fiindcă
+    # listele se ating (germana și nordicele împart „for"/„en"), deci un anunț
+    # german lovește și marcatori `da`/`nb` — dar mult mai slab decât cei `de`.
+    if known_density >= _LANG_MIN_DENSITY and known_density >= foreign_density:
+        return known
+    if foreign_density >= _LANG_MIN_DENSITY:
+        return LANG_OTHER
+    # Destul text, dar nicio limbă nu-l explică: nu e proză (listă de
+    # keyword-uri). „Nu știu" — deci trece.
+    return LANG_UNKNOWN
+
+
+def language_allowed(job: dict, config: dict) -> bool:
+    """True dacă limba anunțului e una dintre cele acceptate.
+
+    Regulă per piață cu fallback global, ca `requires_email`/`requires_remote`.
+    Listă goală sau absentă = fără regulă (opt-in: o config existentă nu începe
+    brusc să taie rânduri). Verdictul „necunoscut" trece ÎNTOTDEAUNA — vezi
+    `LANG_UNKNOWN`.
+    """
+    scraping = config.get("scraping", {}) or {}
+    market_cfg = (scraping.get("markets", {}) or {}).get(job.get("market")) or {}
+    allowed = market_cfg.get("allowed_languages")
+    if allowed is None:
+        allowed = (scraping.get("filters", {}) or {}).get("allowed_languages")
+    if not allowed:
+        return True
+
+    detected = detect_job_language(job)
+    if detected == LANG_UNKNOWN:
+        return True
+    return detected in {str(x).strip().lower() for x in allowed}
+
+
 def passes_prefilter(job: dict, config: dict) -> bool:
     """True dacă jobul merită cheltuiala de analiză AI."""
     score, _ = prescore(job, config)

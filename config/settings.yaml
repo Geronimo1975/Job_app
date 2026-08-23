@@ -50,9 +50,12 @@ scraping:
   interval_minutes: 360
   # Max joburi per apel de scraping
   max_results_per_call: 50
-  # Vechimea maximă a anunțului (ore). La interval de 6h, 168h însemna
-  # re-descărcarea acelorași joburi de ~28 de ori.
-  hours_old: 72
+  # Vechimea maximă a anunțului (ore). A fost 72; urcat la 168 (7 zile) pe
+  # 2026-08-23, fiindcă sub `require_email: true` randamentul e ~2% din brut —
+  # o fereastră de 3 zile lăsa prea puține anunțuri ca să iasă ceva trimisibil.
+  # Re-descărcarea aceluiași job NU e o problemă: `store/seen.py` deduplică
+  # între rulări, deci costul e doar de rețea.
+  hours_old: 168
 
   # ── Piețe ─────────────────────────────────────────────────
   # O piață = țară + limbă + keywords + surse. Codul primește un obiect
@@ -64,19 +67,25 @@ scraping:
     # dă exact profilul căutat („AI Automation Engineer (Make.com / n8n)").
     # ⚠ LinkedIn nu expune NICIODATĂ adrese de email: rândurile de aici intră
     # cu „Bewerbungsart: Portal" și se aplică din „Apply URL".
-    remote_global:
-      country: "worldwide"
-      language: "en"
-      locations: ["European Union"]
-      remote: true
-      jobspy_sites: ["linkedin"]
-      keyword_groups: &skills_groups
-        - ["Claude Code", "AI Developer", "vibe coding", "AI Automation"]
-        - ["n8n", "workflow automation", "Make.com", "Zapier"]
-        - ["chatbot developer", "conversational AI", "LLM integration"]
-        - ["SEO specialist", "technical SEO", "AI SEO", "GEO optimization"]
-      sources: ["jobspy"]
-      best_effort_sources: ["linkedin"]
+    # ── remote_global: DEZACTIVATĂ 2026-08-23 ─────────────────
+    # Era nucleul „nomad" și dădea exact profilul căutat, dar e o piață DOAR
+    # LinkedIn, iar LinkedIn nu expune descrieri (`linkedin_fetch_description:
+    # false`) — deci nu poate produce NICIODATĂ o adresă de email: măsurat
+    # 2026-08-23, 0 din 1056 de anunțuri. Cu `require_email: true` global
+    # (cerință explicită a userului: fără adresă nu se poate trimite), piața
+    # contribuia 0 rânduri pentru 77% din efortul de scraping. Indeed nu o
+    # poate înlocui: pe `country: worldwide` întoarce 0 rezultate (2026-08-07).
+    # Blocul e comentat, nu șters — ca `nl`. Se reactivează dacă se renunță la
+    # `require_email` sau dacă apare o sursă remote-global cu descrieri.
+    # remote_global:
+    #   country: "worldwide"
+    #   language: "en"
+    #   locations: ["European Union"]
+    #   remote: true
+    #   jobspy_sites: ["linkedin"]
+    #   keyword_groups: *skills_groups
+    #   sources: ["jobspy"]
+    #   best_effort_sources: ["linkedin"]
 
     # ── Locații unde e acceptat și modelul HIBRID ─────────────
     # `remote: false` NU înseamnă „doar on-site": înseamnă că nu se aplică
@@ -88,7 +97,20 @@ scraping:
       language: "de"                   # piața de acasă → Anschreiben în germană
       locations: ["Germany"]
       remote: false
-      keyword_groups: *skills_groups
+      # ⚠ Ancora YAML e definită AICI, pe prima piață activă. Stătea pe
+      # `remote_global`; la dezactivarea aceleia, comentarea blocului ar fi
+      # șters ancora și toate `*skills_groups` de mai jos ar fi crăpat la
+      # încărcare. O piață nouă pusă înaintea lui `de` trebuie fie să preia
+      # ancora, fie să folosească tot `*skills_groups`.
+      keyword_groups: &skills_groups
+        - ["Claude Code", "AI Developer", "vibe coding", "AI Automation"]
+        - ["n8n", "workflow automation", "Make.com", "Zapier"]
+        - ["chatbot developer", "conversational AI", "LLM integration"]
+        - ["SEO specialist", "technical SEO", "AI SEO", "GEO optimization"]
+        # Python/Django lipseau complet din căutări: erau doar în
+        # `skills.secondary`, care influențează SCORUL dar nu se caută
+        # niciodată. Userul se pregătește pe Python/Django (2026-08-23).
+        - ["Python Developer", "Django", "Backend Developer", "FastAPI"]
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
@@ -153,13 +175,13 @@ scraping:
     # care scriu „Trimite CV la …", adică singura sursă de adrese (același
     # raționament ca la piața `de`). `require_remote: false` e explicit, nu
     # implicit, ca să se vadă că a fost o alegere, nu o omisiune.
+    # `require_email` nu mai e suprascris aici: din 2026-08-23 e `true` global.
     ro:
       country: "romania"
       language: "en"
       locations: ["Romania"]
       remote: false
       require_remote: false
-      require_email: true
       keyword_groups: *skills_groups
       # eJobs: singura sursă RO cu descrieri complete; ~106 anunțuri/rulare.
       sources: ["jobspy", "ro_boards"]
@@ -183,10 +205,84 @@ scraping:
       sources: ["jobspy"]
       best_effort_sources: ["linkedin"]
 
+    # ── Extindere europeană (2026-08-23) ──────────────────────
+    # Hub-uri tech unde anunțurile sunt frecvent în engleză. Toate pe același
+    # tipar ca piețele existente; poarta de limbă (`allowed_languages`) taie
+    # anunțurile în limba locală, pe care candidatul nu le poate citi.
+    ie:
+      country: "ireland"
+      language: "en"
+      locations: ["Ireland"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    es:
+      country: "spain"
+      language: "en"
+      locations: ["Spain"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    pt:
+      country: "portugal"
+      language: "en"
+      locations: ["Portugal"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    pl:
+      country: "poland"
+      language: "en"
+      locations: ["Poland"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    cz:
+      country: "czech republic"
+      language: "en"
+      locations: ["Czech Republic"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    dk:
+      country: "denmark"
+      language: "en"
+      locations: ["Denmark"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
+    fi:
+      country: "finland"
+      language: "en"
+      locations: ["Finland"]
+      remote: false
+      keyword_groups: *skills_groups
+      sources: ["jobspy"]
+      best_effort_sources: ["linkedin"]
+
   # Site-uri jobspy folosite per piață. Suportate upstream:
   # indeed, linkedin, glassdoor, google, zip_recruiter, bayt, naukri, bdjobs
   # (zip_recruiter e doar US/CA; bayt/naukri/bdjobs sunt alte regiuni).
-  jobspy_sites: ["indeed", "linkedin"]
+  # LinkedIn SCOS 2026-08-23. Emailul se extrage exclusiv din descriere, iar
+  # LinkedIn nu livrează descrieri fără `linkedin_fetch_description: true` (un
+  # request per job). Măsurat: 0 adrese din 1056 de anunțuri LinkedIn, față de
+  # 27 din 213 pe Indeed (12,7%). Cu `require_email: true` global, LinkedIn era
+  # 77% din efortul de scraping pentru 0 rânduri utilizabile. Pornirea
+  # `linkedin_fetch_description` nu repară: CLAUDE.md a măsurat ~3% adrese, și
+  # alea artefacte de parsare (`_mb@oracle.com`).
+  jobspy_sites: ["indeed"]
 
   # Google Jobs cere o sintaxă proprie, identică cu ce ai tasta în browser
   # (ex. „Python Developer jobs near Berlin since yesterday"). Gol = Google
@@ -240,17 +336,26 @@ scraping:
     # fond ar fi rebalansarea titlu/descriere din `prescore()`; ăsta e pragul
     # coborât până atunci. ⚠ E parametru GLOBAL: atinge toate cele 9 piețe.
     min_prescore: 8
-    # Emailul NU mai e filtru — ar goli exact ce se caută. Joburile remote/
-    # nomad se aplică prin portal, deci n-au adresă (LinkedIn: 0%), pe când
-    # adresele vin din anunțurile locale („Bewerbung an …"): DE 17%, AT 13%,
-    # SE 10%, NL 10%. Cerând emailul, Sheet-ul rămânea fără tocmai joburile
-    # remote. În loc de asta, fiecare rând declară CUM se aplică, în col AA
-    # „Bewerbungsart" (`Email` / `Portal`) — vezi `job_to_sheet_row`.
-    # Mecanismul rămâne implementat și testat: pus pe `true` (global sau per
-    # piață, `scraping.markets.<piață>.require_email`), poarta respinge din nou
-    # joburile fără adresă. Adresele `privacy@`/`reasonable.accommodations@` nu
-    # contează ca adresă nici așa (vezi `_email_rank`).
-    require_email: false
+    # ⚠ TRUE GLOBAL din 2026-08-23 — cerință explicită a userului: „fără e-mail
+    # nu le pot trimite; dacă în scraping nu există e-mail, nu introduci în
+    # tabel". Deci Sheet-ul devine listă strict trimisibilă, nu listă de
+    # aplicare manuală: col AA „Bewerbungsart" va fi practic mereu `Email`.
+    # Costul e mare și măsurat: doar ~2% din anunțurile brute au adresă (29 din
+    # 1373), iar `privacy@`/`reasonable.accommodations@` nu contează ca adresă
+    # (vezi `_email_rank`) — deci randamentul real e și mai mic. Din același
+    # motiv s-a scos LinkedIn din `jobspy_sites` și s-a dezactivat
+    # `remote_global`: fără descriere nu există adresă, deci 0 rânduri.
+    # Se poate scuti o piață cu `scraping.markets.<piață>.require_email: false`.
+    require_email: true
+    # ── Limba anunțului ───────────────────────────────────────
+    # Userul citește engleză (C1), germană (B2-C1) și română (nativ). Un anunț
+    # suedez sau polonez e inutilizabil oricât ar scora — iar lecția `nl`
+    # (JOB-54) e că limba anunțului contează chiar când e scris în engleză.
+    # Poarta respinge DOAR pe dovadă pozitivă că e altă limbă; „nu se poate
+    # detecta" (descriere lipsă sau listă de keyword-uri) trece mai departe.
+    # Listă goală sau absentă = fără regulă. Per piață:
+    # `scraping.markets.<piață>.allowed_languages`.
+    allowed_languages: ["en", "de", "ro"]
     # „Doar remote" ca POARTĂ (ce păstrăm), distinct de `markets.<piață>.remote`
     # (ce cerem sursei). Rămâne `false` global și se activează per piață: pus
     # aici pe `true` ar goli `remote_global`, unde LinkedIn filtrează deja

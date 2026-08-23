@@ -43,6 +43,7 @@ from agents.scraper_agent import ScraperAgent
 from agents.analyzer_agent import AnalyzerAgent
 from filters.relevance import (
     is_remote_job,
+    language_allowed,
     passes_prefilter,
     prescore,
     requires_email,
@@ -163,7 +164,8 @@ def apply_prefilter_gate(
     fi re-evaluate la fiecare rulare.
     """
     stats = {"total": len(jobs), "fara_cheie": 0, "deja_vazute": 0,
-             "nu_e_remote": 0, "fara_email": 0, "respinse": 0, "retinute": 0}
+             "nu_e_remote": 0, "limba_straina": 0, "fara_email": 0,
+             "respinse": 0, "retinute": 0}
     # Fără adresă de contact nu există destinatar: `EmailAgent` doar loghează
     # „lipsă email" și sare rândul, deci jobul ar ocupa un rând în Sheet fără
     # să poată fi trimis vreodată. Regula se citește PER JOB, fiindcă e per
@@ -192,6 +194,13 @@ def apply_prefilter_gate(
         if requires_remote(job, config) and not is_remote_job(job):
             seen.mark(job, RESPINS_PREFILTRU)
             stats["nu_e_remote"] += 1
+            continue
+        # Limba e o proprietate a ANUNȚULUI, deci se verifică înaintea
+        # emailului (care ține de felul în care s-ar aplica). Un anunț într-o
+        # limbă pe care candidatul n-o citește e inutilizabil oricât ar scora.
+        if not language_allowed(job, config):
+            seen.mark(job, RESPINS_PREFILTRU)
+            stats["limba_straina"] += 1
             continue
         # Scorul se evaluează ÎNAINTEA emailului, ca statistica să spună de ce
         # a căzut jobul de fapt (irelevant vs. relevant dar fără destinatar).
@@ -273,11 +282,15 @@ def run_pipeline(args):
             nu_e_remote_suffix = (
                 f"{gate_stats['nu_e_remote']} nu-s remote, " if gate_stats["nu_e_remote"] else ""
             )
+            limba_suffix = (
+                f"{gate_stats['limba_straina']} altă limbă, "
+                if gate_stats["limba_straina"] else ""
+            )
             print(
                 f"  Prefiltru: {gate_stats['total']} găsite{fara_cheie_suffix} → "
                 f"{gate_stats['deja_vazute']} deja văzute, "
                 f"{gate_stats['respinse']} sub prag, "
-                f"{nu_e_remote_suffix}{fara_email_suffix}→ "
+                f"{nu_e_remote_suffix}{limba_suffix}{fara_email_suffix}→ "
                 f"{gate_stats['retinute']} spre analiză"
             )
             print("📊 Sync → Excel Tracker...")
