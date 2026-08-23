@@ -15,8 +15,23 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from scrapers.base import Market
 from scrapers.ro_boards import RoBoardsScraper
+
+
+@pytest.fixture(autouse=True)
+def _fara_pauze():
+    """Neutralizează pauzele dintre cererile de detaliu.
+
+    `_enrich_all` face 3s pauză între anunțuri și backoff de până la 60s pe
+    429 — comportament corect în producție (eJobs limitează pe ritm), dar
+    fixture-ul are 40 de anunțuri, deci suita ar dura 2 minute pe fișierul
+    ăsta. Testele care verifică ritmul își pun propriul patch peste acesta.
+    """
+    with patch("scrapers.ro_boards.time.sleep"):
+        yield
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -381,8 +396,12 @@ class TestDetailRateLimiting:
         assert all(e.startswith("[avertisment]") for e in errors)
 
     def test_rate_limit_stops_further_requests(self, tmp_path):
-        """Odată limita activă, cererile următoare primesc 429 oricum —
-        insistența doar prelungește blocarea."""
+        """Plasa de siguranță ține: nu se încearcă toate anunțurile paginii.
+
+        Invariantul s-a mutat de la „câte cereri" la „câte ANUNȚURI distincte":
+        de când un 429 declanșează backoff, un singur anunț costă mai multe
+        cereri, deci numărarea brută nu mai spune nimic despre oprire.
+        """
         market = _market()
         html = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
         detail_calls = []
@@ -403,7 +422,71 @@ class TestDetailRateLimiting:
             _scraper(tmp_path).scrape_market(market)
 
         # Se oprește mult sub cele 40 de anunțuri ale paginii.
-        assert len(detail_calls) < 20
+        assert len(set(detail_calls)) < 20
+
+    def test_rate_limited_request_is_retried_after_a_pause(self, tmp_path):
+        """Un 429 NU mai înseamnă anunț pierdut.
+
+        Nota veche („odată limita activă, insistența doar prelungește
+        blocarea") s-a dovedit greșită: măsurat 2026-08-22, secvențial cu 3s
+        pauză și backoff 15/30/60s, eJobs a livrat 105/105 anunțuri cu ZERO
+        429-uri. Limita e pe RITM, nu pe volum — abandonul pierdea 71% din
+        bazinul românesc, iar fără descriere nu poate exista email.
+        """
+        market = _market()
+        html = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
+        detail = _detail("Trimite CV la cariere@acme.ro")
+        raspunsuri = {}
+
+        def fake_get(url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            if "/user/locuri-de-munca/" in url:
+                # Primul apel pe fiecare anunț → 429; al doilea reușește.
+                raspunsuri[url] = raspunsuri.get(url, 0) + 1
+                if raspunsuri[url] == 1:
+                    resp.status_code, resp.text = 429, ""
+                else:
+                    resp.status_code, resp.text = 200, detail
+            else:
+                resp.status_code, resp.text = 200, html
+            return resp
+
+        with patch("scrapers.ro_boards.time.sleep") as sleep, \
+             patch("scrapers.ro_boards.httpx.get", side_effect=fake_get):
+            jobs, errors = _scraper(tmp_path).scrape_market(market)
+
+        assert all(j["description"] for j in jobs)          # nimic pierdut
+        assert all(j["email_hr"] == "cariere@acme.ro" for j in jobs)
+        assert errors == []                                  # nici avertisment
+        assert sleep.called                                  # a așteptat, n-a insistat orbește
+
+    def test_gives_up_only_after_the_backoff_is_exhausted(self, tmp_path):
+        """Plasa de siguranță: dacă 429 persistă prin tot backoff-ul, tot se
+        renunță — altfel o blocare reală ar ține rularea la nesfârșit."""
+        market = _market()
+        html = (FIXTURES / "ejobs_sample.html").read_text(encoding="utf-8")
+        detail_calls = []
+
+        def fake_get(url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            if "/user/locuri-de-munca/" in url:
+                detail_calls.append(url)
+                resp.status_code, resp.text = 429, ""
+            else:
+                resp.status_code, resp.text = 200, html
+            return resp
+
+        with patch("scrapers.ro_boards.time.sleep"), \
+             patch("scrapers.ro_boards.httpx.get", side_effect=fake_get):
+            jobs, errors = _scraper(tmp_path).scrape_market(market)
+
+        assert len(jobs) >= EXPECTED_MIN_JOBS       # anunțurile NU se pierd
+        assert any("429" in e for e in errors)
+        # Fiecare anunț încercat de mai multe ori (backoff), dar nu la infinit.
+        assert len(detail_calls) > 4
+        assert len(detail_calls) < 200
 
     def test_no_warning_when_everything_is_enriched(self, tmp_path):
         market = _market()
