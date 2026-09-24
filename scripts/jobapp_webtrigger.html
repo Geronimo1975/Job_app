@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<!--
+  Web trigger — fișierul HTML `WebTrigger` din proiectul Apps Script.
+  Copie trackuită: editarea aici NU deployează; se lipește manual în editor
+  (vezi pașii din antetul scripts/jobapp_appscript.gs).
+-->
+<html lang="ro">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #ffffff; --text: #1c1f24; --muted: #6b7280;
+      --border: #d7dbe0; --accent: #2563eb; --ok: #15803d; --err: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111418; --card: #1a1e24; --text: #e6e8eb; --muted: #9aa3ad;
+        --border: #2d333b; --accent: #60a5fa; --ok: #4ade80; --err: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
+      font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; }
+    p.sub { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+    form {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px;
+    }
+    label { display: block; font-weight: 600; margin-bottom: 8px; }
+    .row { display: flex; gap: 8px; }
+    input[type=url] {
+      flex: 1; min-width: 0; padding: 12px; font-size: 16px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg); color: var(--text);
+    }
+    button {
+      padding: 12px 16px; font-size: 16px; font-weight: 600;
+      border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+      background: var(--card); color: var(--text);
+    }
+    button.primary {
+      width: 100%; margin-top: 12px; background: var(--accent);
+      border-color: var(--accent); color: #fff;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    #result {
+      margin-top: 16px; padding: 12px 16px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--card); display: none;
+      overflow-wrap: anywhere;
+    }
+    #result.ok { border-color: var(--ok); }
+    #result.err { border-color: var(--err); }
+    #result .msg { font-weight: 600; }
+    #result.ok .msg { color: var(--ok); }
+    #result.err .msg { color: var(--err); }
+    #result dl { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+    #result dt { color: var(--muted); }
+    #result dd { margin: 0; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Job → Sheet</h1>
+  <p class="sub">Lipește linkul anunțului: se adaugă un rând nou în col E (Typ) și pornește scraping-ul.</p>
+
+  <form id="f" autocomplete="off">
+    <label for="url">Link job</label>
+    <div class="row">
+      <input id="url" type="url" required placeholder="https://…" value="<?= prefillUrl ?>">
+      <button type="button" id="paste" title="Lipește din clipboard">📋</button>
+    </div>
+    <button class="primary" id="go" type="submit">Trimite la scraping</button>
+  </form>
+
+  <div id="result" role="status" aria-live="polite">
+    <div class="msg"></div>
+    <dl hidden></dl>
+    <div class="link"></div>
+  </div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const POLL_MS = 4000;
+  const POLL_MAX = 30; // ~2 minute
+  let pollTimer = null;
+
+  function show(kind, msg, rowUrl) {
+    const box = $("result");
+    box.className = kind;
+    box.style.display = "block";
+    box.querySelector(".msg").textContent = msg;
+    box.querySelector("dl").hidden = true;
+    const link = box.querySelector(".link");
+    link.textContent = "";
+    if (rowUrl) {
+      const a = document.createElement("a");
+      a.href = rowUrl; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "Deschide rândul în Sheet";
+      link.appendChild(a);
+    }
+  }
+
+  function renderStatus(s) {
+    const dl = $("result").querySelector("dl");
+    dl.textContent = "";
+    [["Firma", s.firma], ["Position", s.position], ["Standort", s.standort],
+     ["Typ", s.typ], ["Notizen", s.notiz]].forEach(([k, v]) => {
+      if (!v) return;
+      const dt = document.createElement("dt"); dt.textContent = k;
+      const dd = document.createElement("dd"); dd.textContent = v;
+      dl.append(dt, dd);
+    });
+    dl.hidden = !dl.children.length;
+  }
+
+  function poll(row, n) {
+    google.script.run
+      .withSuccessHandler((s) => {
+        if (!s) return;
+        renderStatus(s);
+        const done = s.firma || s.position;
+        if (done) {
+          $("result").querySelector(".msg").textContent = "Rândul " + row + " completat ✓";
+        } else if (n < POLL_MAX) {
+          pollTimer = setTimeout(() => poll(row, n + 1), POLL_MS);
+        } else {
+          $("result").querySelector(".msg").textContent =
+            "Rândul " + row + " — încă nu s-a completat; verifică Sheet-ul";
+        }
+      })
+      .getRowStatus(row);
+  }
+
+  $("paste").addEventListener("click", async () => {
+    try {
+      $("url").value = (await navigator.clipboard.readText()).trim();
+    } catch (e) {
+      $("url").focus(); // clipboard blocat în iframe — rămâne paste manual
+    }
+  });
+
+  $("f").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    clearTimeout(pollTimer);
+    const url = $("url").value.trim();
+    $("go").disabled = true;
+    show("", "Se trimite…");
+    google.script.run
+      .withSuccessHandler((r) => {
+        $("go").disabled = false;
+        show(r.ok ? "ok" : "err", r.message, r.rowUrl);
+        if (r.ok) {
+          $("url").value = "";
+          poll(r.row, 0);
+        }
+      })
+      .withFailureHandler((e) => {
+        $("go").disabled = false;
+        show("err", "Eroare: " + (e && e.message ? e.message : e));
+      })
+      .submitJobUrl(url);
+  });
+</script>
+</body>
+</html>

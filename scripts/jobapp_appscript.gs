@@ -10,6 +10,9 @@
  *      (WEBHOOK_URL NU mai e necesar — e hardcodat mai jos la job.n8n-studio.com)
  *   3. În dropdown selectează `setupTriggers` → Run (autorizează scope-urile)
  *   4. (Opțional) Run `testWebhook` ca să verifici conexiunea (trebuie Status 200)
+ *   5. (Opțional) Web trigger: adaugă un fișier HTML numit `WebTrigger` cu
+ *      conținutul din `scripts/jobapp_webtrigger.html`, apoi
+ *      Deploy → New deployment → Web app (Execute as: Me, Access: Only myself)
  */
 
 // URL-ul serverului FastAPI (fostul jobs.get-hub.io, mort). Hardcodat ca să NU
@@ -74,7 +77,10 @@ function onEditInstallable(e) {
 }
 
 /**
- * URL paste în col E (Typ) — trimite la webhook care face scrape + auto-fill.
+ * URL în col E (Typ) — trimite la webhook care face scrape + auto-fill.
+ * Apelat din onEdit (paste manual) ȘI din web trigger (submitJobUrl).
+ * Întoarce {ok, code, body}; la eșec pune URL-ul înapoi în col E și loghează
+ * motivul în col W, ca rândul să poată fi reîncercat prin re-paste.
  */
 function processScrapeUrl(sheet, row, url) {
   sheet.getRange(row, TYP_COL).setValue("scraping...");
@@ -97,10 +103,161 @@ function processScrapeUrl(sheet, row, url) {
     if (code < 200 || code >= 300) {
       sheet.getRange(row, TYP_COL).setValue(url);
       logError(sheet, row, "Scrape URL HTTP " + code + ": " + body);
+      return { ok: false, code: code, body: body };
     }
+    return { ok: true, code: code, body: body };
   } catch (err) {
     sheet.getRange(row, TYP_COL).setValue(url);
     logError(sheet, row, "Scrape URL error: " + err.message);
+    return { ok: false, code: 0, body: err.message };
+  }
+}
+
+// ============================================================
+//  WEB TRIGGER — pagină unde lipești un link de job
+// ============================================================
+//
+// De ce web app Apps Script și nu un endpoint în repo: trigger-ul onEdit NU
+// se declanșează la scrieri prin API (n8n, gspread) — doar la editări făcute
+// de om în UI. Un link scris în col E din afară ar rămâne acolo fără scrape.
+// Web app-ul rulează în contextul Sheet-ului: adaugă rândul și apelează direct
+// processScrapeUrl(), exact ca la paste-ul manual.
+//
+// Deploy: Deploy → New deployment → Web app
+//   Execute as:     Me
+//   Who has access: Only myself   (secretul HMAC rămâne în Script Properties)
+
+const WEB_TRIGGER_TAB = "Bewerbungen";
+const APPLY_URL_HEADER = "Apply URL";
+const MAX_URL_LENGTH = 2000;
+
+function doGet(e) {
+  const tpl = HtmlService.createTemplateFromFile("WebTrigger");
+  // Doar pre-completare (bookmarklet / share) — un GET nu declanșează nimic.
+  tpl.prefillUrl = (e && e.parameter && e.parameter.url) || "";
+  return tpl
+    .evaluate()
+    .setTitle("Job → Sheet")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1");
+}
+
+/**
+ * Apelat din pagină (google.script.run). Adaugă un rând nou cu URL-ul în
+ * col E și pornește scrape-ul. Refuză URL-urile deja prezente în Sheet.
+ */
+function submitJobUrl(rawUrl) {
+  assertOwner_();
+  const url = String(rawUrl || "").trim();
+  if (!/^https?:\/\/\S+$/i.test(url) || url.length > MAX_URL_LENGTH) {
+    return { ok: false, message: "Link invalid — trebuie să înceapă cu http(s)://" };
+  }
+
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheet = ss.getSheetByName(WEB_TRIGGER_TAB);
+  if (!sheet) return { ok: false, message: "Tab-ul " + WEB_TRIGGER_TAB + " lipsește" };
+
+  // Lock: două trimiteri simultane ar calcula același getLastRow() și ar
+  // scrie în același rând.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return { ok: false, message: "Sheet ocupat, reîncearcă în câteva secunde" };
+  }
+  let row;
+  try {
+    const existing = findRowByUrl_(sheet, url);
+    if (existing) {
+      return {
+        ok: false,
+        duplicate: true,
+        row: existing,
+        rowUrl: rowUrl_(ss, sheet, existing),
+        message: "Linkul există deja în rândul " + existing,
+      };
+    }
+    row = sheet.getLastRow() + 1;
+    sheet.getRange(row, TYP_COL).setValue(url);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+
+  const res = processScrapeUrl(sheet, row, url);
+  return {
+    ok: res.ok,
+    row: row,
+    rowUrl: rowUrl_(ss, sheet, row),
+    message: res.ok
+      ? "Rândul " + row + " adăugat — scraping pornit"
+      : "Rândul " + row + " adăugat, dar webhook-ul a eșuat (HTTP " + res.code + "): " + res.body,
+  };
+}
+
+/** Starea rândului, pentru polling din pagină după trimitere. */
+function getRowStatus(row) {
+  assertOwner_();
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(WEB_TRIGGER_TAB);
+  const r = Number(row);
+  if (!sheet || !Number.isInteger(r) || r <= HEADER_ROW || r > sheet.getLastRow()) {
+    return null;
+  }
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
+  const values = sheet.getRange(r, 1, 1, lastCol).getValues()[0];
+  const pick = (name) => {
+    const i = headers.indexOf(name);
+    return i >= 0 ? String(values[i] || "") : "";
+  };
+  return {
+    typ: String(values[TYP_COL - 1] || ""),
+    firma: pick("Firma"),
+    position: pick("Position"),
+    standort: pick("Standort"),
+    notiz: String(values[NOTIZEN_COL - 1] || "").split("\n")[0],
+  };
+}
+
+/**
+ * Caută URL-ul în col E și în „Apply URL" (acolo îl mută scrape-ul după
+ * completare). Comparația ignoră slash-ul final și majusculele host-ului.
+ */
+function findRowByUrl_(sheet, url) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= HEADER_ROW) return 0;
+  const headers = sheet.getRange(HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const cols = [TYP_COL];
+  const applyIdx = headers.indexOf(APPLY_URL_HEADER);
+  if (applyIdx >= 0 && applyIdx + 1 !== TYP_COL) cols.push(applyIdx + 1);
+
+  const target = normalizeUrl_(url);
+  const n = lastRow - HEADER_ROW;
+  for (const col of cols) {
+    const vals = sheet.getRange(HEADER_ROW + 1, col, n, 1).getValues();
+    for (let i = 0; i < n; i++) {
+      if (normalizeUrl_(vals[i][0]) === target) return HEADER_ROW + 1 + i;
+    }
+  }
+  return 0;
+}
+
+function normalizeUrl_(value) {
+  const s = String(value || "").trim().replace(/\/+$/, "");
+  return s.replace(/^(https?:\/\/[^\/?#]+)/i, (m) => m.toLowerCase());
+}
+
+function rowUrl_(ss, sheet, row) {
+  return ss.getUrl() + "#gid=" + sheet.getSheetId() + "&range=E" + row;
+}
+
+/**
+ * Apărare în adâncime: dacă web app-ul ajunge din greșeală deployat cu
+ * „Anyone", un vizitator străin ar putea scrie în Sheet cu drepturile
+ * proprietarului. Pe „Only myself" condiția e mereu adevărată.
+ */
+function assertOwner_() {
+  const active = Session.getActiveUser().getEmail();
+  const owner = Session.getEffectiveUser().getEmail();
+  if (!active || active !== owner) {
+    throw new Error("Acces refuzat");
   }
 }
 
