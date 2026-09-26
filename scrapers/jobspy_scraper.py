@@ -52,14 +52,40 @@ _EMAIL_DENY_SUBSTRINGS = (
     "paytransparency", "pay-transparency", "press", "media", "noreply",
     "no-reply", "donotreply", "do-not-reply", "unsubscribe", "abuse",
     "postmaster", "webmaster", "security", "inclusion", "diversity",
+    # Protecția datelor în limbile piețelor europene (JOB-58). Lista era doar
+    # engleză+germană, iar `Ochrona.danych@roche.com` (poloneză) a trecut drept
+    # adresă de candidatură într-o rulare reală. Fiecare piață scrapată își
+    # scrie clauza GDPR în limba ei, deci fiecare are nevoie de intrare.
+    "ochrona", "daneosobowe", "dane-osobowe",          # pl
+    "ochrana", "osobnichudaju", "osobnich-udaju",      # cs
+    "privacidad", "proteccion",                        # es
+    "privacidade", "protecao",                         # pt
+    "personvern", "personopplysning",                  # no
+    "personuppgift",                                   # sv
+    "persondata",                                      # da
+    "tietosuoja",                                      # fi
+    "confidentialitate", "protectiadatelor",           # ro
+    "confidentialite",                                 # fr
+    "riservatezza",                                    # it
 )
 # Prea scurți pentru subșir („dpo" s-ar prinde în „adpower") — token întreg.
-_EMAIL_DENY_TOKENS = frozenset({"dpo", "gdpr"})
+# `rodo`/`avg` sunt GDPR în poloneză, respectiv neerlandeză.
+_EMAIL_DENY_TOKENS = frozenset({"dpo", "gdpr", "rodo", "avg"})
 
 # Adrese tipice de candidatură — preferate chiar dacă apar mai târziu în text.
 _EMAIL_PREFER_SUBSTRINGS = (
     "bewerbung", "recruit", "career", "karriere", "vacature", "sollicitatie",
     "stellen", "hiring", "talent", "application", "personal",
+    # Echivalentele locale ale piețelor europene, ca o adresă bună să nu rămână
+    # doar „neutră" și să piardă în fața alteia care se potrivește pe engleză.
+    "kariera", "kariery", "rekrutacja",                # pl
+    "kariera-cz", "nabor",                             # cs
+    "empleo", "trabaja",                               # es
+    "emprego", "carreiras",                            # pt
+    "rekruttering", "ledige",                          # no/da
+    "rekrytering", "lediga",                           # sv
+    "rekrytointi", "tyopaikat",                        # fi
+    "cariere", "recrutare", "angajari",                # ro
 )
 # `hr` ca subșir s-ar prinde în „chris@" — token întreg.
 _EMAIL_PREFER_TOKENS = frozenset({"hr", "jobs", "job", "apply", "work", "people"})

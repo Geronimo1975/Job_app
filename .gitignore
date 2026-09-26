@@ -12,6 +12,11 @@ Thumbs.db
 
 # Secrets
 .env
+# Backup-urile lui .env conțin ACELEAȘI secrete, dar `.env` singur nu le prinde
+# (`.env.bak-20260822` nu e `.env`) — apăreau ca untracked, la un `git add -A`
+# distanță de a ajunge pe GitHub.
+.env.*
+!.env.example
 *.key
 
 # Data & Output (user-specific, regenerabile)

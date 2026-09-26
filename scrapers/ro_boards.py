@@ -15,8 +15,7 @@ uita doar la carduri pierdea 37 din 40 de anunțuri per căutare.
 
 import json
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
+import time
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -65,13 +64,20 @@ _JSONLD_RE = re.compile(
 _TAG_RE = re.compile(r"<[^>]+>")
 _EMAIL_RE = re.compile(r"[\w._%+-]+@[\w.-]+\.\w{2,}")
 
-# Câte pagini de detaliu se cer simultan. eJobs limitează agresiv: măsurat
-# 2026-08-06, cu 4 workeri 81 din 106 cereri au primit 429 — și, fiindcă
-# `raise_for_status()` nu era apelat, un 429 arăta identic cu o pagină fără
-# `JobPosting`, deci scraperul raporta „0 erori" cu 76% din îmbogățire pierdută.
-_DETAIL_WORKERS = 2
-# După atâtea 429-uri renunțăm la restul: odată ce limita s-a activat, cererile
-# următoare eșuează oricum, iar insistența doar prelungește blocarea.
+# ── Ritmul cererilor de detaliu ──────────────────────────────
+# eJobs limitează pe RITM, nu pe volum. Istoric: cu 4 workeri, 81 din 106
+# cereri primeau 429; cu 2 workeri + abandon după 8 × 429, se pierdeau 75 din
+# 105 anunțuri. Măsurat 2026-08-22, SECVENȚIAL cu 3s pauză și backoff:
+# 105/105 îmbogățite, ZERO 429. Nota veche („îmbogățirea completă NU e
+# realizabilă într-o rulare") era o concluzie trasă cu paralelism prea agresiv.
+# Costul e timpul — ~5 min pentru 105 anunțuri — dar fără descriere nu poate
+# exista email, deci un anunț sărit e un anunț pierdut definitiv.
+_DETAIL_PAUSE_SEC = 3.0
+# Pauzele de reîncercare pe 429, pentru ACELAȘI anunț. Un 429 nu mai înseamnă
+# anunț pierdut: înseamnă „prea repede".
+_DETAIL_BACKOFF_SEC = (15.0, 30.0, 60.0)
+# Plasă de siguranță: după atâtea anunțuri care au epuizat tot backoff-ul,
+# renunțăm la rest. Fără ea, o blocare reală ar ține rularea la nesfârșit.
 _RATE_LIMIT_GIVE_UP = 8
 
 # Rezultatele unei încercări de îmbogățire — decid ce se raportează.
@@ -114,6 +120,20 @@ def _find_typed(node, wanted: str):
             if found is not None:
                 return found
     return None
+
+
+def _first_node(value) -> dict:
+    """Primul nod dintr-un câmp JSON-LD care poate fi dict SAU listă.
+
+    Schema.org permite ambele forme pentru `hiringOrganization`/`jobLocation`/
+    `address`, iar eJobs chiar folosește lista (verificat live 2026-08-22).
+    Fără normalizarea asta, `.get()` pe listă ridica AttributeError — prins de
+    `except Exception` din `_enrich_from_detail`, deci un anunț îmbogățit cu
+    succes se raporta `unavailable` și pierdea locația și data.
+    """
+    if isinstance(value, list):
+        value = value[0] if value else None
+    return value if isinstance(value, dict) else {}
 
 
 def _plain_text(html_fragment: str) -> str:
@@ -173,34 +193,35 @@ class RoBoardsScraper:
         return unique, errors
 
     def _enrich_all(self, jobs: list[dict], market: Market) -> list[str]:
-        """Cere paginile de detaliu, cu oprire la rate limit. Întoarce mesaje.
+        """Cere paginile de detaliu SECVENȚIAL, cu pauze și backoff pe 429.
 
-        Oprirea nu e o optimizare: odată ce eJobs a activat limita, cererile
-        următoare primesc 429 oricum, iar insistența doar prelungește blocarea.
+        Un 429 nu mai înseamnă anunț pierdut, ci „prea repede": același anunț
+        se reia după o pauză crescătoare. Abandonul de dinainte părea rezonabil
+        („odată limita activă, insistența prelungește blocarea"), dar era
+        măsurat cu paralelism agresiv — la ritm răbdător eJobs livrează tot.
         """
         if not jobs:
             return []
 
-        stop = threading.Event()
-        lock = threading.Lock()
         counters = {_DETAIL_OK: 0, _DETAIL_RATE_LIMITED: 0, _DETAIL_UNAVAILABLE: 0}
         skipped = 0
 
-        def run(job: dict) -> None:
-            nonlocal skipped
-            if stop.is_set():
-                with lock:
-                    skipped += 1
-                return
-            outcome = self._enrich_from_detail(job)
-            with lock:
-                counters[outcome] = counters.get(outcome, 0) + 1
-                if (outcome == _DETAIL_RATE_LIMITED
-                        and counters[_DETAIL_RATE_LIMITED] >= _RATE_LIMIT_GIVE_UP):
-                    stop.set()
+        for index, job in enumerate(jobs):
+            if counters[_DETAIL_RATE_LIMITED] >= _RATE_LIMIT_GIVE_UP:
+                skipped = len(jobs) - index
+                break
+            if index:
+                time.sleep(_DETAIL_PAUSE_SEC)
 
-        with ThreadPoolExecutor(max_workers=_DETAIL_WORKERS) as pool:
-            list(pool.map(run, jobs))
+            outcome = self._enrich_from_detail(job)
+            # Backoff doar pe 429; o pagină lipsă („unavailable") nu se repară
+            # prin așteptare, deci reîncercarea ar fi timp irosit.
+            for pause in _DETAIL_BACKOFF_SEC:
+                if outcome != _DETAIL_RATE_LIMITED:
+                    break
+                time.sleep(pause)
+                outcome = self._enrich_from_detail(job)
+            counters[outcome] = counters.get(outcome, 0) + 1
 
         incomplete = counters[_DETAIL_RATE_LIMITED] + counters[_DETAIL_UNAVAILABLE] + skipped
         if not incomplete:
@@ -352,12 +373,12 @@ class RoBoardsScraper:
                     job["email_hr"] = _first_email(", ".join(_EMAIL_RE.findall(description)))
 
             if not job.get("company"):
-                organization = posting.get("hiringOrganization") or {}
+                organization = _first_node(posting.get("hiringOrganization"))
                 job["company"] = str(organization.get("name") or "").strip()
 
             # „Romania" e valoarea implicită pusă de parser, nu una aflată.
             if not job.get("location") or job["location"] == "Romania":
-                address = ((posting.get("jobLocation") or {}).get("address") or {})
+                address = _first_node(_first_node(posting.get("jobLocation")).get("address"))
                 locality = str(address.get("addressLocality") or "").strip()
                 if locality:
                     job["location"] = locality
