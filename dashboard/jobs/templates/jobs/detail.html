@@ -21,6 +21,8 @@
       <span><strong>Kontakt-Recherche:</strong>
         <a href="{{ linkedin_search }}" target="_blank" rel="noopener">Ansprechpartner auf LinkedIn suchen</a></span>
     {% endif %}
+    <span><strong>Interview:</strong>
+      <a href="{% url 'interview_prep' job.pk %}">Vorbereitung ansehen</a></span>
   </div>
 
   <form method="post" action="{% url 'job_detail' job.pk %}" id="edit-form">
