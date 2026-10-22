@@ -8,6 +8,7 @@ from filters.relevance import (
     requires_email,
     prescore,
     skill_tokens,
+    skills_present,
 )
 
 
@@ -72,6 +73,31 @@ class TestHardReject:
         score, reasons = prescore(_job("Head of Data Platform"), CFG)
         assert score == HARD_REJECT
         assert any("Head of" in r for r in reasons)
+
+
+class TestSkillsPresent:
+    """ATS keyword match (strategia Jobscan)."""
+
+    SKILLS = ["Python", "Django", "AI/ML", "Docker"]
+
+    def test_finds_skill_in_text(self):
+        got = skills_present("We use Python and Docker daily.", self.SKILLS)
+        assert got == ["Python", "Docker"]
+
+    def test_whole_word_only(self):
+        # „ml" din „AI/ML" nu trebuie să se prindă în „html".
+        assert skills_present("Experience with html templates", self.SKILLS) == []
+
+    def test_case_insensitive(self):
+        assert skills_present("strong django experience", self.SKILLS) == ["Django"]
+
+    def test_no_duplicates_preserves_config_order(self):
+        got = skills_present("python python django", ["Django", "Python"])
+        assert got == ["Django", "Python"]
+
+    def test_empty_text_or_skills(self):
+        assert skills_present("", self.SKILLS) == []
+        assert skills_present("Python", []) == []
 
 
 class TestExcludeCompanies:

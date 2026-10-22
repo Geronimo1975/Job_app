@@ -70,6 +70,25 @@ def _matches(text: str, skill: str) -> bool:
     return any(_contains(text, tok) for tok in skill_tokens(skill))
 
 
+def skills_present(text: str, skills: list[str]) -> list[str]:
+    """Skill-urile din config care apar TEXTUAL în `text` (cuvânt întreg).
+
+    Strategia „ATS keyword match" de la Jobscan: ATS-urile potrivesc pe termeni
+    exacți din anunț, deci un Anschreiben care repetă chiar cuvintele din job
+    trece mai bine de filtrul automat. Întoarce skill-urile originale (nu
+    token-ii) ca să fie folosite ca atare în prompt, fără dubluri, în ordinea
+    din config. Reutilizează `_matches` — o singură implementare de potrivire.
+    """
+    text_l = (text or "").lower()
+    seen: set[str] = set()
+    found: list[str] = []
+    for skill in skills or []:
+        if skill not in seen and _matches(text_l, skill):
+            seen.add(skill)
+            found.append(skill)
+    return found
+
+
 def _market_keywords(job: dict, config: dict) -> list[str]:
     """Keyword-urile de căutare relevante pentru piața jobului.
 
