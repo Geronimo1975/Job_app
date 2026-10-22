@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Bewerbung Autofill",
+  "version": "0.1.0",
+  "description": "Füllt ATS-Bewerbungsformulare (Greenhouse, Lever, Ashby, Workday, Personio) aus deinem lokalen Profil. Füllt nur — sendet nie ab.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Bewerbung Autofill"
+  },
+  "options_page": "options.html"
+}

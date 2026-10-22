@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sample ATS Form (Test)</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; max-width: 480px; margin: 30px auto; }
+  .f { margin-bottom: 10px; } label { display: block; font-weight: 600; font-size: 13px; }
+  input { width: 100%; padding: 8px; }
+</style>
+</head>
+<body>
+  <h1>Sample Bewerbungsformular (Test)</h1>
+  <p>Zum manuellen Testen der Extension. Profil ausfüllen → „Diese Seite ausfüllen“.</p>
+
+  <!-- Greenhouse-Stil: name mit [] -->
+  <div class="f"><label for="first_name">First Name</label>
+    <input id="first_name" name="job_application[first_name]"></div>
+  <div class="f"><label for="last_name">Last Name</label>
+    <input id="last_name" name="job_application[last_name]"></div>
+
+  <!-- autocomplete-Standard -->
+  <div class="f"><label for="em">Email</label>
+    <input id="em" type="email" autocomplete="email"></div>
+
+  <!-- camelCase id -->
+  <div class="f"><label for="ph">Phone</label>
+    <input id="ph" name="phoneNumber"></div>
+
+  <!-- Deutsch -->
+  <div class="f"><label for="plz">Postleitzahl</label><input id="plz" name="plz"></div>
+  <div class="f"><label for="ort">Wohnort</label><input id="ort" name="ort"></div>
+  <div class="f"><label for="gehalt">Gehaltsvorstellung</label><input id="gehalt"></div>
+
+  <!-- aria-label, kein sichtbares label -->
+  <div class="f"><input aria-label="LinkedIn Profile" placeholder="https://linkedin.com/in/…"></div>
+
+  <!-- darf NICHT gefüllt werden -->
+  <div class="f"><label for="pw">Passwort</label><input id="pw" type="password"></div>
+  <div class="f"><label>Lebenslauf (PDF)<input type="file"></label></div>
+
+  <button type="button">Absenden (nur Demo)</button>
+</body>
+</html>
