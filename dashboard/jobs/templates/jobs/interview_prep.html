@@ -1,0 +1,8 @@
+{% extends "jobs/base.html" %}
+{% block title %}Interview — {{ job.title|default:"Job" }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'job_detail' job.pk %}">← Înapoi la job</a></p>
+  <h1>Interview-Vorbereitung</h1>
+  <p class="muted">{{ job.title|default:"(fără titlu)" }} @ {{ job.company|default:"?" }}</p>
+  <pre style="white-space: pre-wrap; line-height: 1.5;">{{ prep }}</pre>
+{% endblock %}
