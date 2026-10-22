@@ -48,6 +48,7 @@ from agents.email_agent import EmailAgent
 from agents.document_agent import DocumentAgent
 from agents.tracker_agent import TrackerAgent
 from agents.n8n_sync_agent import N8nSyncAgent
+from agents.followup_agent import FollowupAgent
 from sender.n8n_client import N8nClient
 from sender.n8n_mapping import sheet_row_to_job
 
@@ -486,6 +487,20 @@ def run_poll(args) -> list:
     return results
 
 
+def run_followup(args) -> list:
+    """Trimite follow-up-uri pentru candidaturile fără răspuns.
+
+    Standalone (ca poll): NU înlănțuie pașii pipeline. Citește store-ul local
+    de trimiteri, verifică inbox-ul prin IMAP cine a răspuns, și dă un nudge
+    doar celor fără răspuns și peste pragul de zile. Dry-run implicit; --live
+    trimite efectiv. Dacă IMAP pică, agentul abortează (zero follow-up).
+    """
+    print("\n📨 FOLLOW-UP: candidaturi fără răspuns...")
+    result = FollowupAgent().run(dry_run=not args.live, provider=args.provider)
+    print_result(result)
+    return [result]
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Job_app — Multi-Agent Bewerbung Pipeline",
@@ -493,7 +508,7 @@ def main():
     )
     parser.add_argument(
         "--step",
-        choices=["scrape", "analyze", "generate", "organize", "verify", "send", "report", "full", "poll"],
+        choices=["scrape", "analyze", "generate", "organize", "verify", "send", "report", "full", "poll", "followup"],
         default="full",
         help="Step de executat (default: full)",
     )
@@ -508,6 +523,8 @@ def main():
     try:
         if args.step == "poll":
             run_poll(args)
+        elif args.step == "followup":
+            run_followup(args)
         else:
             run_pipeline(args)
     except KeyboardInterrupt:
