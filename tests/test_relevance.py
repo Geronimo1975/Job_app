@@ -74,6 +74,55 @@ class TestHardReject:
         assert any("Head of" in r for r in reasons)
 
 
+class TestExcludeCompanies:
+    """Lista neagră de firme (strategia „Exclude Companies" de la LoopCV)."""
+
+    CFG_CO = {
+        "skills": {"primary": ["Python"]},
+        "scraping": {
+            "filters": {
+                "exclude_keywords": [],
+                "exclude_companies": ["Randstad", "Hays"],
+                "min_prescore": 40,
+            }
+        },
+    }
+
+    def test_blocked_company_rejects(self):
+        score, reasons = prescore(
+            _job("Python Developer", company="Randstad Deutschland GmbH"),
+            self.CFG_CO,
+        )
+        assert score == HARD_REJECT
+        assert any("Randstad" in r for r in reasons)
+
+    def test_match_is_case_insensitive_substring(self):
+        score, _ = prescore(
+            _job("Python Developer", company="hays technology"), self.CFG_CO
+        )
+        assert score == HARD_REJECT
+
+    def test_unlisted_company_passes(self):
+        score, _ = prescore(
+            _job("Python Developer", company="Acme GmbH"), self.CFG_CO
+        )
+        assert score > 0
+
+    def test_missing_company_does_not_crash(self):
+        score, _ = prescore(_job("Python Developer"), self.CFG_CO)
+        assert score > 0
+
+    def test_empty_list_disables_filter(self):
+        cfg = {
+            "skills": {"primary": ["Python"]},
+            "scraping": {"filters": {"exclude_companies": [], "min_prescore": 40}},
+        }
+        score, _ = prescore(
+            _job("Python Developer", company="Randstad"), cfg
+        )
+        assert score > 0
+
+
 class TestScoring:
     def test_primary_skill_in_title_scores_high(self):
         score, reasons = prescore(_job("Python Developer"), CFG)
