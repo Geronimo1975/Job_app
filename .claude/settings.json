@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(python -m pytest:*)",
       "Bash(python3 -m pytest:*)",
@@ -22,6 +21,10 @@
       "Bash(python3 main.py:*)",
       "Bash(python3 scripts/deploy_n8n_workflows.py:*)",
       "Bash(python3 scripts/test_e2e_manual.py:*)"
-    ]
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "enabledPlugins": {
+    "claude-code-setup@anthropic-plugin-directory": true
   }
 }
