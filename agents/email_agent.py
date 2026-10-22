@@ -22,6 +22,7 @@ from agents.base_agent import (
 )
 from generators.email_body_gen import EmailBodyGenerator
 from sender.smtp_sender import SmtpSender
+from sender.followup_store import FollowupStore
 
 
 class EmailAgent(BaseAgent):
@@ -31,6 +32,11 @@ class EmailAgent(BaseAgent):
         super().__init__("EmailAgent")
         self.smtp = SmtpSender(self.config, self.project_root)
         self.body_gen = EmailBodyGenerator(self.config, self.project_root)
+        # Store de follow-up: ce s-a trimis real intră aici, ca pasul followup
+        # să știe cui și când să dea un nudge.
+        self.followup_store = FollowupStore(
+            self.project_root / "output" / "logs" / "followup_state.json"
+        )
 
     def run(
         self,
@@ -121,6 +127,15 @@ class EmailAgent(BaseAgent):
                         "status": status_text,
                         "timestamp": datetime.now().isoformat(),
                     })
+                    # Înregistrează doar trimiterile REALE pentru follow-up.
+                    if not dry_run:
+                        self.followup_store.record_sent(
+                            url=job.get("url", ""),
+                            email=to_email,
+                            company=company,
+                            position=position,
+                            language=job.get("language", "de"),
+                        )
                 else:
                     result.errors.append(f"{company}: trimitere eșuată")
 
