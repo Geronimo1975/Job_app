@@ -118,6 +118,18 @@ def prescore(job: dict, config: dict,
         if _contains(title_l, excluded.lower()):
             return HARD_REJECT, [f"exclus: {excluded}"]
 
+    # ── Excludere firmă (strategia „Exclude Companies" de la LoopCV) ──
+    # Lista neagră de angajatori: agenții de staffing, firma curentă a
+    # userului, firme deja refuzate. Potrivire pe SUBȘIR, nu pe cuvânt
+    # întreg — numele legal variază („Randstad" trebuie să prindă
+    # „Randstad Deutschland GmbH"), spre deosebire de titluri unde conta
+    # cuvântul întreg. Hard-reject: o firmă exclusă nu se compensează.
+    company_l = str(job.get("company") or "").lower()
+    if company_l:
+        for blocked in filters.get("exclude_companies", []) or []:
+            if blocked.lower().strip() in company_l:
+                return HARD_REJECT, [f"firmă exclusă: {blocked}"]
+
     score = 0
     reasons: list[str] = []
 

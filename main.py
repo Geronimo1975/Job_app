@@ -370,6 +370,11 @@ def run_pipeline(args):
         print_result(result)
         results.append(result)
 
+        # Statistici per piață (strategia „get improved" de la LoopCV): arată
+        # CE piață merită efortul. Citește doar lotul local, nu atinge Sheet-ul.
+        from store.market_stats import load_and_render
+        print("\n" + load_and_render())
+
     # SUMMARY
     print(f"\n{'═' * 54}")
     print(f"  PIPELINE SUMMARY")

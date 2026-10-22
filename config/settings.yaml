@@ -195,6 +195,9 @@ scraping:
       - "Director"
       - "VP"
       - "Head of"
+    # Firme pe lista neagră: hard-reject pe subșir în numele firmei (agenții
+    # de staffing, firma curentă, firme deja refuzate). Gol = dezactivat.
+    exclude_companies: []
     # Roluri greșite: penalizare mare în prescore (nu hard-reject)
     negative_keywords:
       - "sales"
