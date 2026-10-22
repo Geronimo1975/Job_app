@@ -77,6 +77,24 @@ def job_detail(request, pk):
     )
 
 
+def ats_scan(request, pk):
+    """Scor ATS: cât de bine rezonează CV-ul (pe limba jobului) cu anunțul."""
+    job = get_object_or_404(Job, pk=pk)
+    from agents.base_agent import load_config, cv_path_for, job_language
+    from ats_scanner import scan_cv, extract_pdf_text
+
+    cfg = load_config()
+    skills_cfg = cfg.get("skills", {}) or {}
+    skills = (skills_cfg.get("primary", []) or []) + (skills_cfg.get("secondary", []) or [])
+    lang = job.language or job_language(job)
+    cv_path = cv_path_for(cfg, lang)
+    cv_text = extract_pdf_text(cv_path)
+    result = scan_cv(cv_text, job.description or "", skills)
+    result["cv_found"] = bool(cv_text)
+    result["cv_name"] = Path(cv_path).name
+    return render(request, "jobs/ats_scan.html", {"job": job, "ats": result})
+
+
 def delete_job(request, pk):
     if request.method == "POST":
         Job.objects.filter(pk=pk).delete()

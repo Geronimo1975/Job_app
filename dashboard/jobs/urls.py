@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("add", views.add_job, name="add_job"),
     path("job/<int:pk>/", views.job_detail, name="job_detail"),
+    path("job/<int:pk>/ats", views.ats_scan, name="ats_scan"),
     path("job/<int:pk>/delete", views.delete_job, name="delete_job"),
     path("job/<int:pk>/push", views.push_job, name="push_job"),
     path("job/<int:pk>/execute", views.execute_job, name="execute_job"),

@@ -173,6 +173,17 @@ def _ok_extraction(url):
 
 
 class ViewTests(TestCase):
+    @patch("ats_scanner.extract_pdf_text", return_value="Experienced in Python and Docker.")
+    def test_ats_scan_renders_score(self, _mock):
+        job = Job.objects.create(
+            url="https://acme.de/jobs/1", title="Dev", company="Acme",
+            description="We need Python and Docker.", language="de",
+        )
+        resp = self.client.get(reverse("ats_scan", args=[job.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "ATS-Score")
+        self.assertContains(resp, "100%")
+
     @patch("jobs.views.extract_job")
     def test_add_job_creates_row_and_redirects(self, mock_extract):
         url = "https://acme.de/jobs/1"

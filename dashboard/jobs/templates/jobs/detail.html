@@ -21,6 +21,8 @@
       <span><strong>Kontakt-Recherche:</strong>
         <a href="{{ linkedin_search }}" target="_blank" rel="noopener">Ansprechpartner auf LinkedIn suchen</a></span>
     {% endif %}
+    <span><strong>ATS-Score:</strong>
+      <a href="{% url 'ats_scan' job.pk %}">CV gegen Anzeige prüfen</a></span>
   </div>
 
   <form method="post" action="{% url 'job_detail' job.pk %}" id="edit-form">
