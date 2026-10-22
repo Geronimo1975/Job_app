@@ -77,6 +77,22 @@ def job_detail(request, pk):
     )
 
 
+def interview_prep(request, pk):
+    """Foaie de pregătire de interviu, generată determinist din anunț + skills."""
+    job = get_object_or_404(Job, pk=pk)
+    from agents.base_agent import load_config, job_language
+    from generators.interview_prep_gen import generate_prep
+
+    cfg = load_config()
+    skills_cfg = cfg.get("skills", {}) or {}
+    skills = (skills_cfg.get("primary", []) or []) + (skills_cfg.get("secondary", []) or [])
+    prep = generate_prep(
+        job.description or "", job.title or "", job.company or "",
+        skills, job.language or "de",
+    )
+    return render(request, "jobs/interview_prep.html", {"job": job, "prep": prep})
+
+
 def delete_job(request, pk):
     if request.method == "POST":
         Job.objects.filter(pk=pk).delete()
