@@ -266,6 +266,18 @@ email:
   delay_between_emails_sec: 30
   # Dry run implicit (safety)
   dry_run_default: true
+  # Follow-up automat pentru candidaturile fără răspuns (--step followup).
+  # Opt-in: pe false, pasul nu trimite nimic. Verifică inbox-ul prin IMAP cine
+  # a răspuns ÎNAINTE de a trimite — un fir cu răspuns NU primește nudge.
+  followup:
+    enabled: false
+    after_days: 7          # nudge după atâtea zile fără răspuns
+    imap_since_days: 30     # cât de departe citește inbox-ul după răspunsuri
+    imap:
+      server: "imap.gmx.net"
+      port: 993
+      login: "george.cucuiet@gmx.de"
+      env_password_key: "GMX_PASSWORD"
 
 # ── Tracker ─────────────────────────────────────────────────
 tracker:
