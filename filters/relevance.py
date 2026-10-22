@@ -70,6 +70,25 @@ def _matches(text: str, skill: str) -> bool:
     return any(_contains(text, tok) for tok in skill_tokens(skill))
 
 
+def skills_present(text: str, skills: list[str]) -> list[str]:
+    """Skill-urile din config care apar TEXTUAL în `text` (cuvânt întreg).
+
+    Strategia „ATS keyword match" de la Jobscan: ATS-urile potrivesc pe termeni
+    exacți din anunț, deci un Anschreiben care repetă chiar cuvintele din job
+    trece mai bine de filtrul automat. Întoarce skill-urile originale (nu
+    token-ii) ca să fie folosite ca atare în prompt, fără dubluri, în ordinea
+    din config. Reutilizează `_matches` — o singură implementare de potrivire.
+    """
+    text_l = (text or "").lower()
+    seen: set[str] = set()
+    found: list[str] = []
+    for skill in skills or []:
+        if skill not in seen and _matches(text_l, skill):
+            seen.add(skill)
+            found.append(skill)
+    return found
+
+
 def _market_keywords(job: dict, config: dict) -> list[str]:
     """Keyword-urile de căutare relevante pentru piața jobului.
 
@@ -117,6 +136,18 @@ def prescore(job: dict, config: dict,
     for excluded in filters.get("exclude_keywords", []) or []:
         if _contains(title_l, excluded.lower()):
             return HARD_REJECT, [f"exclus: {excluded}"]
+
+    # ── Excludere firmă (strategia „Exclude Companies" de la LoopCV) ──
+    # Lista neagră de angajatori: agenții de staffing, firma curentă a
+    # userului, firme deja refuzate. Potrivire pe SUBȘIR, nu pe cuvânt
+    # întreg — numele legal variază („Randstad" trebuie să prindă
+    # „Randstad Deutschland GmbH"), spre deosebire de titluri unde conta
+    # cuvântul întreg. Hard-reject: o firmă exclusă nu se compensează.
+    company_l = str(job.get("company") or "").lower()
+    if company_l:
+        for blocked in filters.get("exclude_companies", []) or []:
+            if blocked.lower().strip() in company_l:
+                return HARD_REJECT, [f"firmă exclusă: {blocked}"]
 
     score = 0
     reasons: list[str] = []

@@ -17,6 +17,10 @@
       <span><strong>Anschreiben (Drive):</strong>
         <a href="{{ job.anschreiben_drive_link }}" target="_blank" rel="noopener">deschide PDF-ul</a></span>
     {% endif %}
+    {% if linkedin_search %}
+      <span><strong>Kontakt-Recherche:</strong>
+        <a href="{{ linkedin_search }}" target="_blank" rel="noopener">Ansprechpartner auf LinkedIn suchen</a></span>
+    {% endif %}
   </div>
 
   <form method="post" action="{% url 'job_detail' job.pk %}" id="edit-form">

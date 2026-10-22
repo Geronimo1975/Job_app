@@ -67,7 +67,14 @@ def job_detail(request, pk):
             return redirect("job_detail", pk=pk)
     else:
         form = JobForm(instance=job)
-    return render(request, "jobs/detail.html", {"job": job, "form": form})
+    # „Insider connections" (Jobright), etic: link de căutare, fără scraping.
+    from outreach import linkedin_people_search_url
+    linkedin_search = linkedin_people_search_url(job.company)
+    return render(
+        request,
+        "jobs/detail.html",
+        {"job": job, "form": form, "linkedin_search": linkedin_search},
+    )
 
 
 def delete_job(request, pk):

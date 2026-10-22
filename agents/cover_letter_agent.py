@@ -20,6 +20,7 @@ from agents.base_agent import (
     job_language,
 )
 from generators.cover_letter_gen import CoverLetterGenerator
+from filters.relevance import skills_present
 
 
 class CoverLetterAgent(BaseAgent):
@@ -79,8 +80,8 @@ class CoverLetterAgent(BaseAgent):
             # Generează
             self.logger.info(f"  ✍ Generiere Anschreiben: {company} — {position} ({lang})")
             try:
-                # Construiește instrucțiuni speciale din analiză
-                special = self._build_special_instructions(analysis)
+                # Construiește instrucțiuni speciale din analiză + ATS
+                special = self._build_special_instructions(analysis, description)
 
                 text = self.generator.generate(
                     company=company,
@@ -151,8 +152,15 @@ class CoverLetterAgent(BaseAgent):
 
         return self._finish(result)
 
-    def _build_special_instructions(self, analysis: dict) -> str:
-        """Construiește instrucțiuni speciale bazate pe analiză."""
+    def _build_special_instructions(self, analysis: dict, description: str = "") -> str:
+        """Construiește instrucțiuni speciale din analiză + termeni ATS.
+
+        `description` alimentează potrivirea ATS deterministă (strategia Jobscan):
+        skill-urile din config prezente TEXTUAL în anunț sunt cerute explicit în
+        Anschreiben, cu cuvintele exacte din job, fiindcă ATS-urile potrivesc pe
+        termeni exacți. E complementar `matching_skills` (care vine din AI și
+        poate lipsi) — deterministul prinde ce AI-ul ratează.
+        """
         parts = []
 
         matching = analysis.get("matching_skills", [])
@@ -169,7 +177,22 @@ class CoverLetterAgent(BaseAgent):
         if requirements:
             parts.append(f"Hauptanforderungen: {', '.join(requirements[:3])}")
 
+        ats = self._ats_keywords(description)
+        if ats:
+            parts.append(
+                "Verwende exakt diese Begriffe aus der Stellenanzeige (ATS-Optimierung): "
+                + ", ".join(ats)
+            )
+
         return "\n".join(parts) if parts else ""
+
+    def _ats_keywords(self, description: str) -> list[str]:
+        """Skill-urile userului (primary + secondary) prezente în anunț."""
+        if not description:
+            return []
+        skills_cfg = self.config.get("skills", {}) or {}
+        skills = (skills_cfg.get("primary", []) or []) + (skills_cfg.get("secondary", []) or [])
+        return skills_present(description, skills)[:8]
 
     def _find_existing(self, output_dir: Path, company: str, position: str) -> Path | None:
         """Caută un Anschreiben existent pentru acest job."""
