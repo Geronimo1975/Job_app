@@ -67,7 +67,48 @@ def job_detail(request, pk):
             return redirect("job_detail", pk=pk)
     else:
         form = JobForm(instance=job)
-    return render(request, "jobs/detail.html", {"job": job, "form": form})
+    # „Insider connections" (Jobright), etic: link de căutare, fără scraping.
+    from outreach import linkedin_people_search_url
+    linkedin_search = linkedin_people_search_url(job.company)
+    return render(
+        request,
+        "jobs/detail.html",
+        {"job": job, "form": form, "linkedin_search": linkedin_search},
+    )
+
+
+def interview_prep(request, pk):
+    """Foaie de pregătire de interviu, generată determinist din anunț + skills."""
+    job = get_object_or_404(Job, pk=pk)
+    from agents.base_agent import load_config
+    from generators.interview_prep_gen import generate_prep
+
+    cfg = load_config()
+    skills_cfg = cfg.get("skills", {}) or {}
+    skills = (skills_cfg.get("primary", []) or []) + (skills_cfg.get("secondary", []) or [])
+    prep = generate_prep(
+        job.description or "", job.title or "", job.company or "",
+        skills, job.language or "de",
+    )
+    return render(request, "jobs/interview_prep.html", {"job": job, "prep": prep})
+
+
+def ats_scan(request, pk):
+    """Scor ATS: cât de bine rezonează CV-ul (pe limba jobului) cu anunțul."""
+    job = get_object_or_404(Job, pk=pk)
+    from agents.base_agent import load_config, cv_path_for, job_language
+    from ats_scanner import scan_cv, extract_pdf_text
+
+    cfg = load_config()
+    skills_cfg = cfg.get("skills", {}) or {}
+    skills = (skills_cfg.get("primary", []) or []) + (skills_cfg.get("secondary", []) or [])
+    lang = job.language or job_language(job)
+    cv_path = cv_path_for(cfg, lang)
+    cv_text = extract_pdf_text(cv_path)
+    result = scan_cv(cv_text, job.description or "", skills)
+    result["cv_found"] = bool(cv_text)
+    result["cv_name"] = Path(cv_path).name
+    return render(request, "jobs/ats_scan.html", {"job": job, "ats": result})
 
 
 def delete_job(request, pk):

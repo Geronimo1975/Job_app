@@ -1,0 +1,25 @@
+{% extends "jobs/base.html" %}
+{% block title %}ATS — {{ job.title|default:"Job" }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'job_detail' job.pk %}">← Înapoi la job</a></p>
+  <h1>ATS-Score</h1>
+  <p class="muted">{{ job.title|default:"(fără titlu)" }} @ {{ job.company|default:"?" }} — CV: {{ ats.cv_name }}</p>
+
+  {% if not ats.cv_found %}
+    <div class="banner live">CV-ul ({{ ats.cv_name }}) nu a fost găsit sau nu are strat de text — scorul nu e relevant.</div>
+  {% endif %}
+
+  <div style="font-size: 2.6rem; font-weight: 700; margin: 12px 0;">{{ ats.score }}%
+    <span class="muted" style="font-size: 1rem;">potrivire CV ↔ anunț</span></div>
+
+  <h3>Prezente în CV ({{ ats.present|length }})</h3>
+  {% if ats.present %}
+    <ul>{% for s in ats.present %}<li>✅ {{ s }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Niciun skill cerut găsit în CV.</p>{% endif %}
+
+  <h3>Lipsesc din CV ({{ ats.missing|length }})</h3>
+  {% if ats.missing %}
+    <ul>{% for s in ats.missing %}<li>⚠️ {{ s }}</li>{% endfor %}</ul>
+    <p class="muted">Dacă ai experiența, adaug-o în CV cu exact acești termeni (ATS potrivește exact).</p>
+  {% else %}<p class="muted">Anunțul nu cere niciun skill cunoscut care să lipsească.</p>{% endif %}
+{% endblock %}
