@@ -92,7 +92,54 @@
     return null;
   }
 
-  const api = { matchField, AUTOCOMPLETE, HEURISTICS };
+  // Diacritice jos (ß→ss, ü→ue? nu — doar fold accent) + punctuație → spațiu.
+  function foldNorm(s) {
+    return String(s || "")
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "") // scoate accentele combinante
+      .replace(/ß/g, "ss")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  /**
+   * Alege <option> dintr-un <select> pentru o valoare de profil.
+   * options: [{value, text}] în ordinea din DOM. value: string din profil.
+   * Întoarce indexul opțiunii potrivite sau null.
+   *
+   * Conservator intenționat: potrivim doar pe egalitate (exactă / normalizată) și
+   * pe conținere de cuvinte întregi. NU avem tabel de sinonime de țări, deci
+   * „Germany" în profil NU va nimeri o opțiune „Deutschland" — mai bine lăsăm
+   * câmpul necompletat decât să alegem greșit țara într-o candidatură.
+   */
+  function pickOption(options, value) {
+    const list = Array.isArray(options) ? options : [];
+    const want = foldNorm(value);
+    if (!want) return null;
+
+    // 1. egalitate pe text SAU pe value-ul opțiunii (foldNorm pe amândouă).
+    for (let i = 0; i < list.length; i += 1) {
+      const o = list[i] || {};
+      if (foldNorm(o.text) === want || foldNorm(o.value) === want) return i;
+    }
+    // 2. conținere pe cuvinte întregi: toate cuvintele căutate apar în opțiune,
+    //    SAU toate cuvintele opțiunii apar în căutare (ex. „deutschland" vs
+    //    „deutschland (germany)"). Sărim opțiunile-placeholder (text gol/scurt).
+    const wantTokens = want.split(" ").filter(Boolean);
+    for (let i = 0; i < list.length; i += 1) {
+      const o = list[i] || {};
+      const optNorm = foldNorm(o.text);
+      if (!optNorm) continue;
+      const optTokens = optNorm.split(" ").filter(Boolean);
+      const wantInOpt = wantTokens.every((t) => optTokens.includes(t));
+      const optInWant = optTokens.every((t) => wantTokens.includes(t));
+      if (wantInOpt || optInWant) return i;
+    }
+    return null;
+  }
+
+  const api = { matchField, pickOption, foldNorm, AUTOCOMPLETE, HEURISTICS };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api; // Node (teste)
   } else {
