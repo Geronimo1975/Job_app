@@ -4,7 +4,7 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert");
-const { matchField } = require("../matcher.js");
+const { matchField, pickOption } = require("../matcher.js");
 
 test("autocomplete has top priority", () => {
   assert.equal(matchField({ autocomplete: "given-name", label: "irrelevant" }), "firstName");
@@ -58,4 +58,52 @@ test("unknown field returns null", () => {
 test("greenhouse-style attributes", () => {
   assert.equal(matchField({ id: "first_name", name: "job_application[first_name]" }), "firstName");
   assert.equal(matchField({ id: "last_name", name: "job_application[last_name]" }), "lastName");
+});
+
+test("matchField accepts select type (nu e în lista respinsă)", () => {
+  assert.equal(matchField({ type: "select", label: "Country" }), "country");
+});
+
+test("pickOption: egalitate pe text și pe value", () => {
+  const opts = [
+    { value: "", text: "Please select…" },
+    { value: "DE", text: "Germany" },
+    { value: "AT", text: "Austria" },
+  ];
+  assert.equal(pickOption(opts, "Germany"), 1); // text
+  assert.equal(pickOption(opts, "germany"), 1); // case-insensitive
+  assert.equal(pickOption(opts, "DE"), 1); // value
+  assert.equal(pickOption(opts, "Austria"), 2);
+});
+
+test("pickOption: diacritice și punctuație normalizate", () => {
+  const opts = [
+    { value: "a", text: "Zürich" },
+    { value: "b", text: "Düsseldorf" },
+  ];
+  assert.equal(pickOption(opts, "Zurich"), 0);
+  assert.equal(pickOption(opts, "dusseldorf"), 1);
+});
+
+test("pickOption: conținere pe cuvinte întregi, în ambele sensuri", () => {
+  const opts = [
+    { value: "", text: "—" },
+    { value: "de", text: "Deutschland (Germany)" },
+  ];
+  // opțiunea conține toate cuvintele căutate.
+  assert.equal(pickOption(opts, "Deutschland"), 1);
+  // căutarea conține toate cuvintele opțiunii.
+  assert.equal(pickOption([{ value: "x", text: "Berlin" }], "Berlin, Germany"), 0);
+});
+
+test("pickOption: conservator — fără sinonime, fără potrivire greșită", () => {
+  const opts = [
+    { value: "", text: "Please select…" },
+    { value: "DE", text: "Deutschland" },
+  ];
+  // „Germany" NU trebuie să nimerească „Deutschland" (n-avem tabel de sinonime).
+  assert.equal(pickOption(opts, "Germany"), null);
+  // placeholder gol nu se potrivește cu valoare goală.
+  assert.equal(pickOption(opts, ""), null);
+  assert.equal(pickOption([], "Germany"), null);
 });

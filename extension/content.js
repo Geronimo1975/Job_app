@@ -51,19 +51,20 @@
     let filled = 0;
     let skipped = 0;
 
+    const ctxOf = (el) => ({
+      autocomplete: el.getAttribute("autocomplete") || "",
+      name: el.getAttribute("name") || "",
+      id: el.id || "",
+      placeholder: el.getAttribute("placeholder") || "",
+      label: labelFor(el),
+      type: el.getAttribute("type") || el.type || "text",
+    });
+
     const fields = document.querySelectorAll("input, textarea");
     for (const el of fields) {
       if (el.disabled || el.readOnly || el.offsetParent === null) continue;
       if (el.value && el.value.trim()) continue; // nu suprascriem ce e completat
-      const ctx = {
-        autocomplete: el.getAttribute("autocomplete") || "",
-        name: el.getAttribute("name") || "",
-        id: el.id || "",
-        placeholder: el.getAttribute("placeholder") || "",
-        label: labelFor(el),
-        type: el.getAttribute("type") || el.type || "text",
-      };
-      const key = matcher.matchField(ctx);
+      const key = matcher.matchField(ctxOf(el));
       if (!key) continue;
       const value = profile[key];
       if (value === undefined || value === null || value === "") {
@@ -73,6 +74,41 @@
       setValue(el, value);
       filled += 1;
     }
+
+    // <select> nativ (Greenhouse/Lever/Personio): potrivim câmpul prin aceeași
+    // euristică, apoi valoarea de profil la o <option> prin pickOption (pur).
+    // type="select" ocolește lista de tipuri respinse din matchField. Comboboxele
+    // custom JS (Workday: <button role="combobox"> + listbox) NU sunt <select> și
+    // rămân manuale — vezi README.
+    const selects = document.querySelectorAll("select");
+    for (const el of selects) {
+      if (el.disabled || el.offsetParent === null) continue;
+      // Un select cu alegere reală făcută (nu placeholder/primul gol) → sărim.
+      if (el.selectedIndex > 0 && el.value && el.value.trim()) continue;
+      const ctx = ctxOf(el);
+      ctx.type = "select";
+      const key = matcher.matchField(ctx);
+      if (!key) continue;
+      const value = profile[key];
+      if (value === undefined || value === null || value === "") {
+        skipped += 1;
+        continue;
+      }
+      const opts = Array.from(el.options).map((o) => ({
+        value: o.value,
+        text: o.textContent || "",
+      }));
+      const idx = matcher.pickOption(opts, value);
+      if (idx === null) {
+        skipped += 1; // câmp recunoscut, dar nicio opțiune nu se potrivește sigur
+        continue;
+      }
+      el.selectedIndex = idx;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      filled += 1;
+    }
+
     return { filled, skipped };
   };
 })();

@@ -42,8 +42,17 @@ pe care altfel aplici manual.
 | `profile.js` | definiția câmpurilor, partajată |
 | `test/` | test Node pentru matcher + formular demo |
 
+## Dropdown-uri (`<select>`)
+Completează ȘI `<select>`-urile native (Greenhouse/Lever/Personio): câmpul e
+potrivit prin aceeași euristică, iar valoarea de profil e legată de o `<option>`
+prin `pickOption` (pur, testat). Potrivirea opțiunii e conservatoare — egalitate
+(exactă/normalizată pe diacritice) sau conținere de cuvinte întregi. NU există
+tabel de sinonime de țări: profil „Germany" nu nimerește o opțiune „Deutschland",
+pentru a nu alege greșit țara. Un select cu alegere reală deja făcută nu e atins.
+
 ## Limite cunoscute
-- Nu completează dropdown-uri complexe (`<select>` custom cu div-uri, tipice
-  Workday) — doar `<input>`/`<textarea>`. Extindere posibilă per platformă.
+- Comboboxele JS custom (Workday: `<button role="combobox">` + listbox, nu
+  `<select>`) rămân manuale — a le deschide și naviga programatic e fragil și
+  poate declanșa dialoguri. `<select>` nativ e acoperit (mai sus).
 - Potrivirea e euristică (autocomplete + label/name/placeholder); câmpurile
   exotice rămân necompletate, niciodată completate greșit cu date sensibile.
